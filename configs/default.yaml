@@ -11,14 +11,14 @@ thresholds:
   yawn_frames: 6
   distracted_frames: 12
 vision:
-  provider: auto
+  provider: mediapipe
   face_landmarker_model: models/face_landmarker.task
-  fallback_to_haar: true
+  fallback_to_haar: false
   process_every_n_frames: 1
   draw_landmarks: true
 object_detector:
-  enabled: false
-  provider: none
+  enabled: true
+  provider: onnx
   model_path: models/driver-objects.onnx
   labels_path: models/driver-objects.labels
   confidence_threshold: 0.25
@@ -29,10 +29,29 @@ object_detector:
     - mobile
 runtime:
   output_fps: null
-  max_frames: null
-  display: false
-  write_video: true
+  max_frames: 200
+  display: true
+  write_video: false
   alert_cooldown_seconds: 2.0
+dht11:
+  enabled: true
+  csv_path: null
+  simulate_when_missing: true
+  comfort_temp_min_c: 20.0
+  comfort_temp_max_c: 30.0
+  comfort_humidity_min_pct: 35.0
+  comfort_humidity_max_pct: 70.0
+fatigue_policy:
+  rest_recommendation_seconds: 14400
+  mandatory_rest_seconds: 36000
+  initial_driving_seconds_today: 0.0
+cabin_safety:
+  driver_absence_alert_seconds: 3600
+  occupant_labels:
+    - person
+    - child
+    - baby
+    - passenger
 report:
   unsafe_threshold: 0.45
   timeline_stride_frames: 3

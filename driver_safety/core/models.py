@@ -28,6 +28,7 @@ class FramePacket:
     frame_index: int
     source_id: str = "video"
     fps: float | None = None
+    telemetry: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -62,6 +63,8 @@ class ProcessedFrame:
     face_bbox: tuple[int, int, int, int] | None = None
     landmarks: list[tuple[float, float]] = field(default_factory=list)
     objects: list[dict[str, Any]] = field(default_factory=list)
+    # driver_position: 'left', 'center', 'right' or None - convenient for overlays and downstream logic
+    driver_position: str | None = None
 
 
 @dataclass(slots=True)
@@ -75,6 +78,7 @@ class SessionSummary:
     longest_unsafe_interval_seconds: float
     confidence_distribution: dict[str, float]
     metrics: dict[str, float | int | str]
+    dht11_timeline: list[dict[str, float]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

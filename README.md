@@ -26,6 +26,15 @@ Using Computer Vision & Deep Learning, we can analyze the driver’s behavior an
 
 4. Classification: Fuzzy classifier to classify the driver’s state by scaling drowsiness, distraction, yawn, eye closure, and joy in real-time based on the threshold values.
 
+5. Cabin safety + fatigue policy:
+   - Recommend rest once driving time exceeds 4 hours.
+   - Raise a critical mandatory-rest alert beyond 10 hours/day.
+   - Raise critical left-behind alert when the driver is absent for >60 minutes and passengers are still detected.
+
+6. DHT11 climate monitoring:
+   - Realtime temperature/humidity overlays in webcam mode.
+   - Temperature/humidity trends in the generated HTML dashboard.
+
 ![AI Driver Safety real human demo](docs/demo/real-human-demo.gif)
 
 | Source | Duration | Frames | Detector | Result |
@@ -165,6 +174,40 @@ Webcam mode:
 
 ```bash
 ai-driver-safety run --source webcam --config configs/default.yaml
+```
+
+Audio alerts in webcam mode (auto-enabled):
+
+- `yawning` -> `Phat hien tai xe ngap`
+- `eyes_closed` -> `Phat hien ngu gat, nguy hiem, nguy hiem`
+- `drowsy` -> `Canh bao dau hieu buon ngu, hay nghi ngoi`
+- `phone_use` / `distracted` -> `Phat hien sao nhang khi lai xe, hay tap trung`
+
+Optional TTS dependency (recommended for spoken voice):
+
+```bash
+python -m pip install pyttsx3
+```
+
+DHT11 CSV input (optional, for replay/testing):
+
+```csv
+timestamp,temperature_c,humidity_pct
+0.0,27.1,59.0
+1.0,27.3,58.8
+2.0,27.4,58.7
+```
+
+```yaml
+dht11:
+  enabled: true
+  csv_path: data/dht11.csv
+  simulate_when_missing: true
+fatigue_policy:
+  rest_recommendation_seconds: 14400
+  mandatory_rest_seconds: 36000
+cabin_safety:
+  driver_absence_alert_seconds: 3600
 ```
 
 Python API:

@@ -16,6 +16,8 @@ DEFAULT_SIGNAL_WEIGHTS = {
     "short_time_to_collision": 0.48,
     "hard_maneuver": 0.26,
     "speeding": 0.2,
+    "driving_fatigue": 0.36,
+    "cabin_occupant_risk": 0.72,
 }
 
 FUSION_MODEL_NAME = "driver-risk-fusion-v1"
@@ -99,6 +101,7 @@ class RiskScorer:
         events: list[DetectionEvent],
         frame_scores: list[tuple[float, float]],
         metrics: dict[str, float | int | str],
+        dht11_timeline: list[dict[str, float]] | None = None,
     ) -> SessionSummary:
         event_counts = Counter(event.signal for event in events)
         risk_timeline = [
@@ -125,6 +128,7 @@ class RiskScorer:
             longest_unsafe_interval_seconds=round(longest_unsafe, 3),
             confidence_distribution=confidence_distribution,
             metrics=summary_metrics,
+            dht11_timeline=dht11_timeline or [],
         )
 
 

@@ -12,6 +12,8 @@ from driver_safety.io.overlay import AnnotatedVideoWriter, draw_overlay
 from driver_safety.io.sources import VideoFrameSource, WebcamFrameSource
 from driver_safety.reporting.exports import export_run_artifacts
 from driver_safety.reporting.recorder import SessionRecorder
+from driver_safety.runtime.audio_alerts import AudioAlertPlayer
+from driver_safety.runtime.dht11 import DHT11Reader
 from driver_safety.vision.pipeline import DriverSafetyPipeline
 
 
@@ -25,6 +27,7 @@ def analyze_video(
     output.mkdir(parents=True, exist_ok=True)
     pipeline = DriverSafetyPipeline(config)
     recorder = SessionRecorder(output)
+    dht11_reader = DHT11Reader(config.dht11)
     writer: AnnotatedVideoWriter | None = None
     if config.runtime.write_video:
         output_fps = config.runtime.output_fps or source.fps
@@ -39,10 +42,17 @@ def analyze_video(
                 break
             if packet.frame_index % config.vision.process_every_n_frames != 0:
                 continue
+            packet.telemetry.update(dht11_reader.read(packet.timestamp))
             processed = pipeline.process_frame(packet)
             last_timestamp = packet.timestamp
             processed_frames += 1
             recorder.write_frame_score(packet.timestamp, processed.risk_score, processed.latency_ms)
+            if {"dht11_temperature_c", "dht11_humidity_pct"}.issubset(packet.telemetry):
+                recorder.write_dht11(
+                    packet.timestamp,
+                    packet.telemetry["dht11_temperature_c"],
+                    packet.telemetry["dht11_humidity_pct"],
+                )
             for event in processed.events:
                 recorder.write_event(event)
             if writer:
@@ -60,6 +70,7 @@ def analyze_video(
         events=recorder.events,
         frame_scores=recorder.frame_scores,
         metrics=_metrics(source.fps, recorder.latencies_ms, pipeline),
+        dht11_timeline=recorder.dht11_timeline,
     )
     artifacts = export_run_artifacts(output, events=recorder.events, summary=summary)
     if writer:
@@ -70,14 +81,35 @@ def analyze_video(
 def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     source = WebcamFrameSource(index)
     pipeline = DriverSafetyPipeline(config)
+    dht11_reader = DHT11Reader(config.dht11)
+    audio_player = AudioAlertPlayer()
     try:
         for packet in source:
+            packet.telemetry.update(dht11_reader.read(packet.timestamp))
             processed = pipeline.process_frame(packet)
+            audio_player.handle_events(processed.events, now=packet.timestamp)
+            # Print concise per-frame diagnostics to console for realtime debugging
+            try:
+                events_signals = [e.signal for e in processed.events]
+                objects = [(o["label"], round(float(o["confidence"]), 3), tuple(o["bbox"])) for o in processed.objects]
+                phone_val = processed.signals.get("phone_use", 0.0)
+                distracted_val = processed.signals.get("distracted", 0.0)
+                print(
+                    f"[frame {packet.frame_index}] ts={packet.timestamp:.3f} pos={processed.driver_position}"
+                    f" risk={processed.risk_score:.2f} events={events_signals} objects={objects}"
+                    f" phone={phone_val:.3f} distracted={distracted_val:.3f}",
+                    flush=True,
+                )
+            except Exception:
+                # ensure logging doesn't break realtime loop
+                pass
+
             frame = draw_overlay(processed)
             cv2.imshow("AI Driver Safety", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
     finally:
+        audio_player.close()
         source.close()
         cv2.destroyAllWindows()
 

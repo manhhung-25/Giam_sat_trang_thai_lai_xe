@@ -47,15 +47,34 @@ class DriverSafetyPipeline:
         self._phone_counter = 0
         self._phone_hold_counter = 0
         self._last_phone: ObjectObservation | None = None
+        self._driver_absent_started_at: float | None = None
+        self._child_left_behind_triggered = False
+        self._rest_recommendation_issued = False
+        self._mandatory_rest_issued = False
+        self._last_timestamp: float | None = None
+        self._driving_seconds_today = config.fatigue_policy.initial_driving_seconds_today
+        self._last_climate_alert_at: float | None = None
 
     def process_frame(self, packet: FramePacket) -> ProcessedFrame:
         started = perf_counter()
+        self._update_driving_clock(packet.timestamp)
         raw_signals = {
             "eyes_closed": 0.0,
             "drowsy": 0.0,
             "yawning": 0.0,
             "distracted": 0.0,
             "phone_use": 0.0,
+            "driving_fatigue": min(
+                1.0,
+                self._driving_seconds_today
+                / max(1.0, self.config.fatigue_policy.mandatory_rest_seconds),
+            ),
+            "cabin_occupant_risk": 0.0,
+            "driver_absent_seconds": 0.0,
+            "driving_hours_today": self._driving_seconds_today / 3600.0,
+            "cabin_occupancy": 0.0,
+            "dht11_temperature_c": 0.0,
+            "dht11_humidity_pct": 0.0,
         }
         events: list[DetectionEvent] = []
         face_bbox: tuple[int, int, int, int] | None = None
@@ -86,8 +105,10 @@ class DriverSafetyPipeline:
 
         object_observations = self.object_detector.detect(packet)
         phone_labels = {label.lower() for label in self.config.object_detector.phone_labels}
+        occupant_labels = {label.lower() for label in self.config.cabin_safety.occupant_labels}
         best_phone = None
         display_objects: list[ObjectObservation] = []
+        occupant_observations: list[ObjectObservation] = []
         for obj in object_observations:
             if (
                 obj.label.lower() in phone_labels
@@ -95,6 +116,8 @@ class DriverSafetyPipeline:
                 and (best_phone is None or obj.confidence > best_phone.confidence)
             ):
                 best_phone = obj
+            if obj.label.lower() in occupant_labels:
+                occupant_observations.append(obj)
 
         if best_phone is None:
             if self._phone_hold_counter > 0 and self._last_phone is not None:
@@ -132,10 +155,60 @@ class DriverSafetyPipeline:
                 )
                 display_objects.append(best_phone)
 
+        occupant_present = bool(occupant_observations) or len(face_observations) > 1
+        raw_signals["cabin_occupancy"] = 1.0 if occupant_present else 0.0
+        if not face_observations:
+            if self._driver_absent_started_at is None:
+                self._driver_absent_started_at = packet.timestamp
+            driver_absent_seconds = max(0.0, packet.timestamp - self._driver_absent_started_at)
+            raw_signals["driver_absent_seconds"] = driver_absent_seconds
+            if (
+                occupant_present
+                and driver_absent_seconds >= self.config.cabin_safety.driver_absence_alert_seconds
+            ):
+                raw_signals["cabin_occupant_risk"] = 1.0
+                if not self._child_left_behind_triggered:
+                    events.append(
+                        self._event(
+                            packet,
+                            "cabin_left_behind",
+                            DriverState.DISTRACTED,
+                            1.0,
+                            Severity.CRITICAL,
+                            "Critical: driver absent >60 minutes while person/child remains in cabin",
+                            metadata={
+                                "driver_absent_seconds": round(driver_absent_seconds, 2),
+                                "occupant_count": float(len(occupant_observations)),
+                            },
+                        )
+                    )
+                    self._child_left_behind_triggered = True
+        else:
+            self._driver_absent_started_at = None
+            self._child_left_behind_triggered = False
+
+        events.extend(self._driving_time_events(packet))
+        events.extend(self._climate_events(packet, raw_signals))
+        if not face_observations:
+            display_objects.extend(occupant_observations[:2])
+
         signals = self.smoother.update(raw_signals)
         risk_score = self.scorer.score(signals)
         state = self.scorer.state_from_events(events, risk_score)
         latency_ms = (perf_counter() - started) * 1000
+        # infer driver_position from face bbox (left/center/right) for overlay and downstream rules
+        driver_position: str | None = None
+        if face_bbox is not None:
+            fx, fy, fbw, fbh = face_bbox
+            center_x = fx + fbw / 2.0
+            frame_w = float(packet.frame.shape[1])
+            if center_x < frame_w / 3.0:
+                driver_position = "left"
+            elif center_x > 2.0 * frame_w / 3.0:
+                driver_position = "right"
+            else:
+                driver_position = "center"
+
         return ProcessedFrame(
             packet=packet,
             state=state,
@@ -146,7 +219,87 @@ class DriverSafetyPipeline:
             face_bbox=face_bbox,
             landmarks=landmarks,
             objects=[obj.to_dict() for obj in display_objects],
+            driver_position=driver_position,
         )
+
+    def _update_driving_clock(self, timestamp: float) -> None:
+        if self._last_timestamp is None:
+            self._last_timestamp = timestamp
+            return
+        delta = max(0.0, timestamp - self._last_timestamp)
+        self._driving_seconds_today += delta
+        self._last_timestamp = timestamp
+
+    def _driving_time_events(self, packet: FramePacket) -> list[DetectionEvent]:
+        events: list[DetectionEvent] = []
+        fatigue = self.config.fatigue_policy
+        if (
+            self._driving_seconds_today >= fatigue.rest_recommendation_seconds
+            and not self._rest_recommendation_issued
+        ):
+            events.append(
+                self._event(
+                    packet,
+                    "rest_recommended_4h",
+                    DriverState.DROWSY,
+                    min(1.0, self._driving_seconds_today / fatigue.mandatory_rest_seconds),
+                    Severity.WARNING,
+                    "Driving time exceeded 4 hours: recommend rest break",
+                    metadata={"driving_hours_today": round(self._driving_seconds_today / 3600.0, 3)},
+                )
+            )
+            self._rest_recommendation_issued = True
+        if self._driving_seconds_today >= fatigue.mandatory_rest_seconds and not self._mandatory_rest_issued:
+            events.append(
+                self._event(
+                    packet,
+                    "mandatory_rest_10h",
+                    DriverState.DROWSY,
+                    1.0,
+                    Severity.CRITICAL,
+                    "Critical: driving time exceeded 10 hours/day. Driver must rest now",
+                    metadata={"driving_hours_today": round(self._driving_seconds_today / 3600.0, 3)},
+                )
+            )
+            self._mandatory_rest_issued = True
+        return events
+
+    def _climate_events(
+        self,
+        packet: FramePacket,
+        signals: dict[str, float],
+    ) -> list[DetectionEvent]:
+        events: list[DetectionEvent] = []
+        temperature = packet.telemetry.get("dht11_temperature_c")
+        humidity = packet.telemetry.get("dht11_humidity_pct")
+        if temperature is None or humidity is None:
+            return events
+        signals["dht11_temperature_c"] = float(temperature)
+        signals["dht11_humidity_pct"] = float(humidity)
+        dht11 = self.config.dht11
+        out_of_comfort = (
+            temperature < dht11.comfort_temp_min_c
+            or temperature > dht11.comfort_temp_max_c
+            or humidity < dht11.comfort_humidity_min_pct
+            or humidity > dht11.comfort_humidity_max_pct
+        )
+        if not out_of_comfort:
+            return events
+        if self._last_climate_alert_at is not None and packet.timestamp - self._last_climate_alert_at < 300:
+            return events
+        self._last_climate_alert_at = packet.timestamp
+        events.append(
+            self._event(
+                packet,
+                "cabin_climate_warning",
+                DriverState.DISTRACTED,
+                0.7,
+                Severity.WARNING,
+                "Cabin climate outside comfort band (DHT11)",
+                metadata={"temperature_c": float(temperature), "humidity_pct": float(humidity)},
+            )
+        )
+        return events
 
     def _face_signals(
         self,

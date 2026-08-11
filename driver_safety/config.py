@@ -52,6 +52,32 @@ class RuntimeConfig:
 
 
 @dataclass(slots=True)
+class DHT11Config:
+    enabled: bool = True
+    csv_path: str | None = None
+    simulate_when_missing: bool = True
+    comfort_temp_min_c: float = 20.0
+    comfort_temp_max_c: float = 30.0
+    comfort_humidity_min_pct: float = 35.0
+    comfort_humidity_max_pct: float = 70.0
+
+
+@dataclass(slots=True)
+class FatiguePolicyConfig:
+    rest_recommendation_seconds: float = 4 * 60 * 60
+    mandatory_rest_seconds: float = 10 * 60 * 60
+    initial_driving_seconds_today: float = 0.0
+
+
+@dataclass(slots=True)
+class CabinSafetyConfig:
+    driver_absence_alert_seconds: float = 60 * 60
+    occupant_labels: list[str] = field(
+        default_factory=lambda: ["person", "child", "baby", "passenger"]
+    )
+
+
+@dataclass(slots=True)
 class ReportConfig:
     unsafe_threshold: float = 0.45
     timeline_stride_frames: int = 3
@@ -63,6 +89,9 @@ class DriverSafetyConfig:
     vision: VisionConfig = field(default_factory=VisionConfig)
     object_detector: ObjectDetectorConfig = field(default_factory=ObjectDetectorConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    dht11: DHT11Config = field(default_factory=DHT11Config)
+    fatigue_policy: FatiguePolicyConfig = field(default_factory=FatiguePolicyConfig)
+    cabin_safety: CabinSafetyConfig = field(default_factory=CabinSafetyConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
     signal_weights: dict[str, float] = field(default_factory=dict)
 
@@ -95,6 +124,9 @@ def _from_nested_dict(data: dict[str, Any]) -> DriverSafetyConfig:
         vision=VisionConfig(**data.get("vision", {})),
         object_detector=ObjectDetectorConfig(**data.get("object_detector", {})),
         runtime=RuntimeConfig(**data.get("runtime", {})),
+        dht11=DHT11Config(**data.get("dht11", {})),
+        fatigue_policy=FatiguePolicyConfig(**data.get("fatigue_policy", {})),
+        cabin_safety=CabinSafetyConfig(**data.get("cabin_safety", {})),
         report=ReportConfig(**data.get("report", {})),
         signal_weights=data.get("signal_weights", {}) or {},
     )
@@ -125,3 +157,18 @@ def _validate_config(config: DriverSafetyConfig) -> None:
         raise ValueError("object_detector.confidence_threshold must be between 0 and 1")
     if not 0 < config.object_detector.iou_threshold < 1:
         raise ValueError("object_detector.iou_threshold must be between 0 and 1")
+    if config.fatigue_policy.rest_recommendation_seconds <= 0:
+        raise ValueError("fatigue_policy.rest_recommendation_seconds must be > 0")
+    if config.fatigue_policy.mandatory_rest_seconds <= 0:
+        raise ValueError("fatigue_policy.mandatory_rest_seconds must be > 0")
+    if (
+        config.fatigue_policy.rest_recommendation_seconds
+        >= config.fatigue_policy.mandatory_rest_seconds
+    ):
+        raise ValueError(
+            "fatigue_policy.rest_recommendation_seconds must be lower than mandatory_rest_seconds"
+        )
+    if config.fatigue_policy.initial_driving_seconds_today < 0:
+        raise ValueError("fatigue_policy.initial_driving_seconds_today must be >= 0")
+    if config.cabin_safety.driver_absence_alert_seconds <= 0:
+        raise ValueError("cabin_safety.driver_absence_alert_seconds must be > 0")

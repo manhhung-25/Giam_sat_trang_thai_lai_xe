@@ -73,9 +73,21 @@ def write_html_report(
     events: list[DetectionEvent],
     summary: SessionSummary,
 ) -> None:
+    drowsiness_signals = {"eyes_closed", "drowsy", "yawning", "distracted", "phone_use"}
+    cabin_signals = {
+        "cabin_left_behind",
+        "rest_recommended_4h",
+        "mandatory_rest_10h",
+        "cabin_climate_warning",
+    }
+    event_counts = summary.event_counts
+    latest_dht11 = summary.dht11_timeline[-1] if summary.dht11_timeline else {}
     rendered = Template(REPORT_TEMPLATE).render(
         events=[event.to_dict() for event in events],
         summary=summary.to_dict(),
+        drowsiness_counts={name: event_counts.get(name, 0) for name in sorted(drowsiness_signals)},
+        cabin_counts={name: event_counts.get(name, 0) for name in sorted(cabin_signals)},
+        latest_dht11=latest_dht11,
     )
     Path(path).write_text(rendered, encoding="utf-8")
 
@@ -99,9 +111,16 @@ REPORT_TEMPLATE = """<!doctype html>
     .timeline { height: 120px; display: flex; align-items: end; gap: 2px; border-bottom: 1px solid #ccd4d1; }
     .bar { width: 5px; background: #2f9f73; min-height: 2px; }
     .bar.warn { background: #df8b32; }
+    .triple { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 12px; margin-top: 18px; }
+    .subgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+    .kv { background: #f8fbfa; border: 1px solid #e2e8e5; border-radius: 6px; padding: 10px; font-size: 13px; }
+    .trend { height: 90px; display: flex; align-items: end; gap: 1px; border-bottom: 1px solid #ccd4d1; margin-top: 8px; }
+    .trend .bar { width: 4px; background: #3f99de; }
+    .trend .bar.hum { background: #2fa970; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { padding: 10px 8px; border-bottom: 1px solid #e2e8e5; text-align: left; vertical-align: top; }
     th { color: #40514b; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    @media (max-width: 980px) { .triple { grid-template-columns: 1fr; } }
     @media (max-width: 780px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } header { display: block; } }
   </style>
 </head>
@@ -120,13 +139,52 @@ REPORT_TEMPLATE = """<!doctype html>
     <div class="metric"><span class="muted">Unsafe Interval</span><strong>{{ summary.longest_unsafe_interval_seconds }}s</strong></div>
     <div class="metric"><span class="muted">Events</span><strong>{{ events|length }}</strong></div>
   </section>
-  <section class="panel">
-    <h2>Risk Timeline</h2>
-    <div class="timeline">
-    {% for point in summary.risk_timeline[::3] %}
-      <div class="bar {% if point.risk_score >= 0.45 %}warn{% endif %}" style="height: {{ 10 + point.risk_score * 100 }}px"></div>
-    {% endfor %}
-    </div>
+  <section class="triple">
+    <section class="panel">
+      <h2>Drowsiness Monitoring</h2>
+      <div class="subgrid">
+      {% for signal, count in drowsiness_counts.items() %}
+        <div class="kv"><strong>{{ count }}</strong><br>{{ signal }}</div>
+      {% endfor %}
+      </div>
+      <h3>Risk Timeline</h3>
+      <div class="timeline">
+      {% for point in summary.risk_timeline[::3] %}
+        <div class="bar {% if point.risk_score >= 0.45 %}warn{% endif %}" style="height: {{ 10 + point.risk_score * 100 }}px"></div>
+      {% endfor %}
+      </div>
+    </section>
+    <section class="panel">
+      <h2>DHT11 Temperature & Humidity</h2>
+      <div class="subgrid">
+        <div class="kv"><strong>{{ "%.2f"|format(latest_dht11.temperature_c if latest_dht11 else 0) }}°C</strong><br>latest temperature</div>
+        <div class="kv"><strong>{{ "%.2f"|format(latest_dht11.humidity_pct if latest_dht11 else 0) }}%</strong><br>latest humidity</div>
+      </div>
+      <h3>Temperature trend</h3>
+      <div class="trend">
+      {% for point in summary.dht11_timeline[::2] %}
+        <div class="bar" style="height: {{ 10 + (point.temperature_c / 50.0) * 80 }}px"></div>
+      {% endfor %}
+      </div>
+      <h3>Humidity trend</h3>
+      <div class="trend">
+      {% for point in summary.dht11_timeline[::2] %}
+        <div class="bar hum" style="height: {{ 10 + (point.humidity_pct / 100.0) * 80 }}px"></div>
+      {% endfor %}
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Cabin Safety Monitoring</h2>
+      <div class="subgrid">
+      {% for signal, count in cabin_counts.items() %}
+        <div class="kv"><strong>{{ count }}</strong><br>{{ signal }}</div>
+      {% endfor %}
+      </div>
+      <p class="muted">
+        Cabin safeguards include left-behind occupant alerts (driver absent > 60 minutes),
+        4-hour rest recommendation, and mandatory rest escalation beyond 10 hours/day.
+      </p>
+    </section>
   </section>
   <section class="panel" style="margin-top: 18px;">
     <h2>Events</h2>

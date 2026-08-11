@@ -16,3 +16,13 @@ def test_invalid_config_rejected(tmp_path: Path) -> None:
     path.write_text("vision:\n  process_every_n_frames: 0\n", encoding="utf-8")
     with pytest.raises(ValueError):
         load_config(path)
+
+
+def test_invalid_fatigue_policy_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "bad-fatigue.yaml"
+    path.write_text(
+        "fatigue_policy:\n  rest_recommendation_seconds: 40000\n  mandatory_rest_seconds: 36000\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_config(path)

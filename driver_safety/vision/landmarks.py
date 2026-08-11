@@ -100,7 +100,22 @@ class MediaPipeFaceLandmarker:
     def detect(self, packet: FramePacket) -> list[FaceObservation]:
         rgb = cv2.cvtColor(packet.frame, cv2.COLOR_BGR2RGB)
         image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
-        result = self._detector.detect_for_video(image, int(packet.timestamp * 1000))
+        try:
+            # Prefer video mode detection to keep temporal context. If MediaPipe
+            # complains about non-monotonic timestamps (possible on some webcams
+            # / frame sources), fall back to image-based detection for this frame.
+            result = self._detector.detect_for_video(image, int(packet.timestamp * 1000))
+        except ValueError as exc:
+            msg = str(exc).lower()
+            if "monotonically" in msg or "timestamp" in msg:
+                detect_img = getattr(self._detector, "detect_for_image", None)
+                if callable(detect_img):
+                    result = detect_img(image)
+                else:
+                    # Generic detect fallback
+                    result = self._detector.detect(image)
+            else:
+                raise
         if not result.face_landmarks:
             return []
         h, w = packet.frame.shape[:2]
