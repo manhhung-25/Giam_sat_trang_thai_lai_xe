@@ -117,7 +117,6 @@ def _draw_signal_strip(frame: Array, processed: ProcessedFrame, width: int, heig
         ("ngu", "drowsy", False),
         ("ngap", "yawning", False),
         ("tap trung", "distracted", True),
-        ("dien thoai", "phone_use", False),
     ]
     col_w = max(1, width // len(labels))
     for idx, (label, signal, invert) in enumerate(labels):

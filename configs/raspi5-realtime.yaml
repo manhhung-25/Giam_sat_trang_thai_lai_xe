@@ -1,12 +1,12 @@
 thresholds:
   eye_aspect_ratio: 0.21
   mouth_aspect_ratio: 0.52
-  head_pose_offset: 0.13
-  missing_face_frames: 10
+  head_pose_offset: 0.18
+  missing_face_frames: 18
   eye_closed_frames: 6
   drowsy_frames: 24
   yawn_frames: 5
-  distracted_frames: 6
+  distracted_frames: 24
   phone_confidence: 0.75
   phone_use_frames: 6
   phone_hold_frames: 8
@@ -17,7 +17,7 @@ vision:
   process_every_n_frames: 3
   draw_landmarks: true
 object_detector:
-  enabled: true
+  enabled: false
   provider: skin_hand
   process_interval_seconds: 0.25
   skin_hand_scan_width: 320
