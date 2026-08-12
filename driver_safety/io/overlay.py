@@ -109,16 +109,24 @@ def _draw_status_panel(
     pad = 18
     x = x0 + pad
     right = x0 + width - pad
-    y = 26
+    y = 24
 
-    _text(frame, "HE THONG", x, y, 0.54, TEXT, 2)
-    y += 20
-    _text(frame, "Du lieu that tu Pi 5", x, y, 0.36, MUTED, 1)
-    y += 26
+    _text(frame, "HE THONG", x, y, 0.50, TEXT, 2)
+    y += 18
+    _text(frame, "Du lieu that tu Pi 5", x, y, 0.32, MUTED, 1)
+    y += 22
 
     telemetry = processed.packet.telemetry
-    y = _compact_metric_row(frame, "CPU", _fmt_percent(telemetry.get("cpu_percent")), x, right, y)
-    y = _compact_metric_row(frame, "RAM", _fmt_ram(telemetry), x, right, y)
+    y = _tiny_metric_pair_row(
+        frame,
+        "CPU",
+        _fmt_percent(telemetry.get("cpu_percent")),
+        "RAM",
+        _fmt_ram_short(telemetry),
+        x,
+        right,
+        y,
+    )
     y = _compact_metric_row(
         frame,
         "Chip",
@@ -129,44 +137,25 @@ def _draw_status_panel(
     )
     y += 8
 
-    _text(frame, "HIEU NANG", x, y, 0.42, TEXT, 2)
-    y += 24
-    y = _compact_metric_pair_row(
-        frame,
-        "Cam",
-        _fmt_number(telemetry.get("camera_fps"), "fps"),
-        "Suy luan",
-        _fmt_ms(telemetry.get("inference_ms")),
-        x,
-        right,
-        y,
-    )
-    y = _compact_metric_pair_row(
-        frame,
-        "GPIO",
-        _fmt_ms(telemetry.get("gpio_latency_ms")),
-        "Canh bao",
-        _fmt_ms(telemetry.get("alert_response_ms")),
-        x,
-        right,
-        y,
-    )
-    y += 8
-
-    _text(frame, "NHAT KY", x, y, 0.42, TEXT, 2)
+    _text(frame, "LICH SU BAT THUONG", x, y, 0.42, TEXT, 2)
     y += 24
     if not recent_events:
         _text(frame, "Chua co canh bao", x, min(y, height - 14), 0.36, MUTED, 1)
         return
 
-    row = recent_events[0]
-    color = ROSE if row.severity == "critical" else AMBER
-    time_label = row.wall_time.split("T")[-1][:8]
-    label = _event_signal_label(row.signal)
-    y = min(y, height - 20)
-    cv2.rectangle(frame, (x, y - 14), (right, min(height - 4, y + 18)), HUD_PANEL, -1)
-    cv2.line(frame, (x, y - 14), (x, min(height - 4, y + 18)), color, 3, cv2.LINE_AA)
-    _text(frame, f"{time_label} {label} risk {row.risk_score:.2f}", x + 10, y + 5, 0.34, TEXT, 1)
+    visible_events = _visible_recent_events(recent_events)
+    line_h = 36
+    max_rows = max(1, (height - y - 8) // line_h)
+    for row in visible_events[:max_rows]:
+        color = ROSE if row.severity == "critical" else AMBER
+        time_label = row.wall_time.split("T")[-1][:8]
+        label = _event_signal_label(row.signal)
+        cv2.rectangle(frame, (x, y - 14), (right, y + 18), HUD_PANEL, -1)
+        cv2.line(frame, (x, y - 14), (x, y + 18), color, 3, cv2.LINE_AA)
+        _text(frame, f"{time_label}  {label}", x + 10, y, 0.33, TEXT, 1)
+        resp = "--" if row.alert_response_ms is None else f"{row.alert_response_ms:.1f}ms"
+        _text(frame, f"risk {row.risk_score:.2f}  resp {resp}", x + 10, y + 13, 0.27, MUTED, 1)
+        y += line_h
 
 
 def _compact_metric_row(frame: Array, label: str, value: str, x: int, right: int, y: int) -> int:
@@ -177,7 +166,7 @@ def _compact_metric_row(frame: Array, label: str, value: str, x: int, right: int
     return y + 30
 
 
-def _compact_metric_pair_row(
+def _tiny_metric_pair_row(
     frame: Array,
     left_label: str,
     left_value: str,
@@ -188,13 +177,13 @@ def _compact_metric_pair_row(
     y: int,
 ) -> int:
     mid = x + (right - x) // 2
-    cv2.rectangle(frame, (x, y - 15), (right, y + 18), HUD_PANEL, -1)
-    cv2.line(frame, (mid, y - 12), (mid, y + 16), HUD_BORDER, 1, cv2.LINE_AA)
-    _text(frame, left_label, x + 10, y - 1, 0.28, MUTED, 1)
-    _text(frame, left_value, x + 10, y + 13, 0.36, TEXT, 1)
-    _text(frame, right_label, mid + 10, y - 1, 0.28, MUTED, 1)
-    _text(frame, right_value, mid + 10, y + 13, 0.36, TEXT, 1)
-    return y + 40
+    cv2.rectangle(frame, (x, y - 14), (right, y + 8), HUD_PANEL, -1)
+    cv2.line(frame, (mid, y - 12), (mid, y + 7), HUD_BORDER, 1, cv2.LINE_AA)
+    _text(frame, left_label, x + 10, y, 0.34, MUTED, 1)
+    _text(frame, left_value, x + 56, y, 0.34, TEXT, 1)
+    _text(frame, right_label, mid + 10, y, 0.34, MUTED, 1)
+    _text(frame, right_value, mid + 58, y, 0.34, TEXT, 1)
+    return y + 27
 
 
 def _draw_top_hud(
@@ -381,16 +370,18 @@ def _event_signal_label(signal: str) -> str:
     return labels.get(signal, signal.replace("_", " ").upper())
 
 
+def _visible_recent_events(events: list[LocalEventLogRow]) -> list[LocalEventLogRow]:
+    visible: list[LocalEventLogRow] = []
+    for event in events:
+        previous_same = next((row for row in visible if row.signal == event.signal), None)
+        if previous_same is not None and abs(previous_same.timestamp - event.timestamp) < 2.0:
+            continue
+        visible.append(event)
+    return visible
+
+
 def _fmt_percent(value: float | None) -> str:
     return "--" if value is None else f"{value:.1f}%"
-
-
-def _fmt_number(value: float | None, suffix: str) -> str:
-    return "--" if value is None else f"{value:.1f} {suffix}"
-
-
-def _fmt_ms(value: float | None) -> str:
-    return "--" if value is None else f"{value:.1f} ms"
 
 
 def _fmt_temp(value: float | None) -> str:
@@ -404,6 +395,11 @@ def _fmt_ram(telemetry: dict[str, float]) -> str:
     if used is None or total is None or percent is None:
         return "--"
     return f"{used:.0f}/{total:.0f} MB {percent:.0f}%"
+
+
+def _fmt_ram_short(telemetry: dict[str, float]) -> str:
+    percent = telemetry.get("ram_percent")
+    return "--" if percent is None else f"{percent:.0f}%"
 
 
 def _risk_color(value: float) -> tuple[int, int, int]:
