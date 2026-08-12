@@ -27,6 +27,8 @@ class GpioAlertActuator:
         self._lock = Lock()
         self._worker: Thread | None = None
         self._active_until = 0.0
+        self._pending_activation_started_at: float | None = None
+        self._last_activation_latency_ms: float | None = None
         self._on_value = 1 if config.active_high else 0
         self._off_value = 0 if config.active_high else 1
 
@@ -48,6 +50,11 @@ class GpioAlertActuator:
     def available(self) -> bool:
         return self._gpio is not None
 
+    @property
+    def last_activation_latency_ms(self) -> float | None:
+        with self._lock:
+            return self._last_activation_latency_ms
+
     def handle_events(self, events: list[DetectionEvent], *, now: float | None = None) -> None:
         if self._gpio is None or not any(self._should_alert(event) for event in events):
             return
@@ -55,6 +62,8 @@ class GpioAlertActuator:
         current = monotonic()
         hold_seconds = max(self._config.cooldown_seconds, self._config.pulse_seconds * 2.0)
         with self._lock:
+            if current >= self._active_until:
+                self._pending_activation_started_at = current
             self._active_until = current + hold_seconds
         self._wake.set()
 
@@ -83,6 +92,7 @@ class GpioAlertActuator:
                     continue
 
                 self._write_outputs(self._on_value)
+                self._record_activation_latency()
                 self._sleep_or_stop(self._config.pulse_seconds)
                 self._write_outputs(self._off_value)
                 self._sleep_or_stop(self._config.pulse_seconds)
@@ -97,6 +107,13 @@ class GpioAlertActuator:
         deadline = monotonic() + seconds
         while not self._stop.is_set() and monotonic() < deadline:
             sleep(0.02)
+
+    def _record_activation_latency(self) -> None:
+        with self._lock:
+            started_at = self._pending_activation_started_at
+            self._pending_activation_started_at = None
+            if started_at is not None:
+                self._last_activation_latency_ms = round((monotonic() - started_at) * 1000.0, 3)
 
     def _write_outputs(self, value: int) -> None:
         assert self._gpio is not None

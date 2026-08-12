@@ -129,31 +129,23 @@ def _draw_status_panel(
     )
     y += 8
 
-    _text(frame, "HIEN THI", x, y, 0.42, TEXT, 2)
+    _text(frame, "HIEU NANG", x, y, 0.42, TEXT, 2)
     y += 24
     y = _compact_metric_pair_row(
         frame,
         "Cam",
         _fmt_number(telemetry.get("camera_fps"), "fps"),
-        "AI",
-        _fmt_number(telemetry.get("analysis_fps"), "fps"),
+        "Suy luan",
+        _fmt_ms(telemetry.get("inference_ms")),
         x,
         right,
         y,
     )
     y = _compact_metric_pair_row(
         frame,
-        "Display",
-        _fmt_number(telemetry.get("display_fps"), "fps"),
-        "Latency",
-        f"{processed.latency_ms:.1f} ms",
-        x,
-        right,
-        y,
-    )
-    y = _compact_metric_row(
-        frame,
-        "Alert resp",
+        "GPIO",
+        _fmt_ms(telemetry.get("gpio_latency_ms")),
+        "Canh bao",
         _fmt_ms(telemetry.get("alert_response_ms")),
         x,
         right,
@@ -196,13 +188,13 @@ def _compact_metric_pair_row(
     y: int,
 ) -> int:
     mid = x + (right - x) // 2
-    cv2.rectangle(frame, (x, y - 15), (right, y + 9), HUD_PANEL, -1)
-    _text(frame, left_label, x + 10, y, 0.35, MUTED, 1)
-    _text(frame, left_value, x + 78, y, 0.35, TEXT, 1)
-    _text(frame, right_label, mid + 8, y, 0.35, MUTED, 1)
-    size = cv2.getTextSize(right_value, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)[0]
-    _text(frame, right_value, right - size[0] - 10, y, 0.35, TEXT, 1)
-    return y + 30
+    cv2.rectangle(frame, (x, y - 15), (right, y + 18), HUD_PANEL, -1)
+    cv2.line(frame, (mid, y - 12), (mid, y + 16), HUD_BORDER, 1, cv2.LINE_AA)
+    _text(frame, left_label, x + 10, y - 1, 0.28, MUTED, 1)
+    _text(frame, left_value, x + 10, y + 13, 0.36, TEXT, 1)
+    _text(frame, right_label, mid + 10, y - 1, 0.28, MUTED, 1)
+    _text(frame, right_value, mid + 10, y + 13, 0.36, TEXT, 1)
+    return y + 40
 
 
 def _draw_top_hud(

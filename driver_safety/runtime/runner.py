@@ -128,7 +128,6 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     pending_packet: FramePacket | None = None
     latest_processed: ProcessedFrame | None = None
     stop_worker = False
-    analysis_stats = {"last_completed_at": perf_counter(), "fps_estimate": 0.0}
 
     def submit_for_analysis(packet: FramePacket) -> None:
         nonlocal pending_packet
@@ -152,17 +151,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
             packet.telemetry.update(dht11_reader.read(packet.timestamp))
             packet.telemetry.update(metrics_reader.read().to_telemetry())
             processed = pipeline.process_frame(packet)
-            analysis_completed_at = perf_counter()
-            analysis_delta = analysis_completed_at - analysis_stats["last_completed_at"]
-            analysis_stats["last_completed_at"] = analysis_completed_at
-            if analysis_delta > 0:
-                instant_analysis_fps = 1.0 / analysis_delta
-                analysis_stats["fps_estimate"] = (
-                    instant_analysis_fps
-                    if analysis_stats["fps_estimate"] <= 0
-                    else analysis_stats["fps_estimate"] * 0.85 + instant_analysis_fps * 0.15
-                )
-                processed.packet.telemetry["analysis_fps"] = analysis_stats["fps_estimate"]
+            processed.packet.telemetry["inference_ms"] = processed.latency_ms
             alert_response_ms = None
             if processed.events:
                 submitted_at = packet.telemetry.get("analysis_submitted_perf_counter")
@@ -177,6 +166,9 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
                 )
             audio_player.handle_events(processed.events, now=packet.timestamp)
             gpio_actuator.handle_events(processed.events, now=packet.timestamp)
+            gpio_latency_ms = gpio_actuator.last_activation_latency_ms
+            if gpio_latency_ms is not None:
+                processed.packet.telemetry["gpio_latency_ms"] = gpio_latency_ms
             if config.runtime.debug_frames:
                 _print_debug_frame(processed)
             with lock:
@@ -236,8 +228,13 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
                 if processed is not None:
                     frame = draw_minimal_overlay_on_frame(frame, processed)
             elif processed is not None:
-                if "analysis_fps" in processed.packet.telemetry:
-                    packet.telemetry["analysis_fps"] = processed.packet.telemetry["analysis_fps"]
+                packet.telemetry["inference_ms"] = processed.packet.telemetry.get(
+                    "inference_ms",
+                    processed.latency_ms,
+                )
+                gpio_latency_ms = gpio_actuator.last_activation_latency_ms
+                if gpio_latency_ms is not None:
+                    packet.telemetry["gpio_latency_ms"] = gpio_latency_ms
                 if "alert_response_ms" in processed.packet.telemetry:
                     packet.telemetry["alert_response_ms"] = processed.packet.telemetry[
                         "alert_response_ms"
