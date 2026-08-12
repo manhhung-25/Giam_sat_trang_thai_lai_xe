@@ -63,6 +63,7 @@ class CameraConfig:
     fps: float | None = None
     buffer_size: int | None = 1
     fourcc: str | None = None
+    threaded: bool = False
 
 
 @dataclass(slots=True)

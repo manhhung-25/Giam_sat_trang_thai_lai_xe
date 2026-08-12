@@ -86,15 +86,23 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
         fps=config.camera.fps,
         buffer_size=config.camera.buffer_size,
         fourcc=config.camera.fourcc,
+        threaded=config.camera.threaded,
     )
     pipeline = DriverSafetyPipeline(config)
     dht11_reader = DHT11Reader(config.dht11)
     audio_player = AudioAlertPlayer()
+    min_process_interval = (
+        config.vision.process_every_n_frames / max(1.0, float(config.camera.fps or source.fps or 30.0))
+    )
+    last_processed_at = -min_process_interval
     try:
         while True:
             packet = source.latest()
-            if packet.frame_index % config.vision.process_every_n_frames != 0:
+            if packet.timestamp - last_processed_at < min_process_interval:
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
                 continue
+            last_processed_at = packet.timestamp
             packet.telemetry.update(dht11_reader.read(packet.timestamp))
             processed = pipeline.process_frame(packet)
             audio_player.handle_events(processed.events, now=packet.timestamp)
