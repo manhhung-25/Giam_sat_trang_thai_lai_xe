@@ -109,26 +109,49 @@ def _draw_status_panel(
     pad = 18
     x = x0 + pad
     right = x0 + width - pad
-    y = 30
+    y = 26
 
-    _text(frame, "HE THONG", x, y, 0.58, TEXT, 2)
-    y += 22
-    _text(frame, "Du lieu that tu Raspberry Pi 5", x, y, 0.38, MUTED, 1)
-    y += 30
+    _text(frame, "HE THONG", x, y, 0.54, TEXT, 2)
+    y += 20
+    _text(frame, "Du lieu that tu Pi 5", x, y, 0.36, MUTED, 1)
+    y += 26
 
     telemetry = processed.packet.telemetry
-    y = _metric_row(frame, "CPU", _fmt_percent(telemetry.get("cpu_percent")), x, right, y)
-    y = _metric_row(frame, "RAM", _fmt_ram(telemetry), x, right, y)
-    y = _metric_row(frame, "Chip", _fmt_temp(telemetry.get("chip_temperature_c")), x, right, y)
-    y += 16
+    y = _compact_metric_row(frame, "CPU", _fmt_percent(telemetry.get("cpu_percent")), x, right, y)
+    y = _compact_metric_row(frame, "RAM", _fmt_ram(telemetry), x, right, y)
+    y = _compact_metric_row(
+        frame,
+        "Chip",
+        _fmt_temp(telemetry.get("chip_temperature_c")),
+        x,
+        right,
+        y,
+    )
+    y += 8
 
-    _text(frame, "HIEN THI", x, y, 0.46, TEXT, 2)
-    y += 26
-    y = _metric_row(frame, "Cam FPS", _fmt_number(telemetry.get("camera_fps"), "fps"), x, right, y)
-    y = _metric_row(frame, "Display FPS", _fmt_number(telemetry.get("display_fps"), "fps"), x, right, y)
-    y = _metric_row(frame, "AI FPS", _fmt_number(telemetry.get("analysis_fps"), "fps"), x, right, y)
-    y = _metric_row(frame, "AI latency", f"{processed.latency_ms:.1f} ms", x, right, y)
-    y = _metric_row(
+    _text(frame, "HIEN THI", x, y, 0.42, TEXT, 2)
+    y += 24
+    y = _compact_metric_pair_row(
+        frame,
+        "Cam",
+        _fmt_number(telemetry.get("camera_fps"), "fps"),
+        "AI",
+        _fmt_number(telemetry.get("analysis_fps"), "fps"),
+        x,
+        right,
+        y,
+    )
+    y = _compact_metric_pair_row(
+        frame,
+        "Display",
+        _fmt_number(telemetry.get("display_fps"), "fps"),
+        "Latency",
+        f"{processed.latency_ms:.1f} ms",
+        x,
+        right,
+        y,
+    )
+    y = _compact_metric_row(
         frame,
         "Alert resp",
         _fmt_ms(telemetry.get("alert_response_ms")),
@@ -136,33 +159,50 @@ def _draw_status_panel(
         right,
         y,
     )
-    y += 16
+    y += 8
 
-    _text(frame, "NHAT KY SU KIEN", x, y, 0.46, TEXT, 2)
-    y += 26
+    _text(frame, "NHAT KY", x, y, 0.42, TEXT, 2)
+    y += 24
     if not recent_events:
-        _text(frame, "Chua co canh bao", x, y, 0.40, MUTED, 1)
+        _text(frame, "Chua co canh bao", x, min(y, height - 14), 0.36, MUTED, 1)
         return
 
-    line_h = 42
-    for row in recent_events[: max(1, (height - y - 10) // line_h)]:
-        color = ROSE if row.severity == "critical" else AMBER
-        time_label = row.wall_time.split("T")[-1][:12]
-        label = _event_signal_label(row.signal)
-        cv2.rectangle(frame, (x, y - 15), (right, y + 21), HUD_PANEL, -1)
-        cv2.line(frame, (x, y - 15), (x, y + 21), color, 3, cv2.LINE_AA)
-        _text(frame, f"{time_label}  {label}", x + 10, y, 0.38, TEXT, 1)
-        resp = "--" if row.alert_response_ms is None else f"{row.alert_response_ms:.1f} ms"
-        _text(frame, f"risk {row.risk_score:.2f}  resp {resp}", x + 10, y + 16, 0.32, MUTED, 1)
-        y += line_h
+    row = recent_events[0]
+    color = ROSE if row.severity == "critical" else AMBER
+    time_label = row.wall_time.split("T")[-1][:8]
+    label = _event_signal_label(row.signal)
+    y = min(y, height - 20)
+    cv2.rectangle(frame, (x, y - 14), (right, min(height - 4, y + 18)), HUD_PANEL, -1)
+    cv2.line(frame, (x, y - 14), (x, min(height - 4, y + 18)), color, 3, cv2.LINE_AA)
+    _text(frame, f"{time_label} {label} risk {row.risk_score:.2f}", x + 10, y + 5, 0.34, TEXT, 1)
 
 
-def _metric_row(frame: Array, label: str, value: str, x: int, right: int, y: int) -> int:
-    cv2.rectangle(frame, (x, y - 18), (right, y + 12), HUD_PANEL, -1)
-    _text(frame, label, x + 10, y, 0.42, MUTED, 1)
-    size = cv2.getTextSize(value, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)[0]
-    _text(frame, value, max(x + 126, right - size[0] - 10), y, 0.42, TEXT, 1)
-    return y + 38
+def _compact_metric_row(frame: Array, label: str, value: str, x: int, right: int, y: int) -> int:
+    cv2.rectangle(frame, (x, y - 15), (right, y + 9), HUD_PANEL, -1)
+    _text(frame, label, x + 10, y, 0.38, MUTED, 1)
+    size = cv2.getTextSize(value, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)[0]
+    _text(frame, value, max(x + 114, right - size[0] - 10), y, 0.38, TEXT, 1)
+    return y + 30
+
+
+def _compact_metric_pair_row(
+    frame: Array,
+    left_label: str,
+    left_value: str,
+    right_label: str,
+    right_value: str,
+    x: int,
+    right: int,
+    y: int,
+) -> int:
+    mid = x + (right - x) // 2
+    cv2.rectangle(frame, (x, y - 15), (right, y + 9), HUD_PANEL, -1)
+    _text(frame, left_label, x + 10, y, 0.35, MUTED, 1)
+    _text(frame, left_value, x + 78, y, 0.35, TEXT, 1)
+    _text(frame, right_label, mid + 8, y, 0.35, MUTED, 1)
+    size = cv2.getTextSize(right_value, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)[0]
+    _text(frame, right_value, right - size[0] - 10, y, 0.35, TEXT, 1)
+    return y + 30
 
 
 def _draw_top_hud(
