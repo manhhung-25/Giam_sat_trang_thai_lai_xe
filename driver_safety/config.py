@@ -80,6 +80,18 @@ class DHT11Config:
 
 
 @dataclass(slots=True)
+class ActuatorConfig:
+    enabled: bool = False
+    buzzer_gpio: int = 18
+    led_gpio: int = 23
+    active_high: bool = True
+    pulse_seconds: float = 0.5
+    cooldown_seconds: float = 2.0
+    warnings_enabled: bool = True
+    critical_enabled: bool = True
+
+
+@dataclass(slots=True)
 class FatiguePolicyConfig:
     rest_recommendation_seconds: float = 4 * 60 * 60
     mandatory_rest_seconds: float = 10 * 60 * 60
@@ -108,6 +120,7 @@ class DriverSafetyConfig:
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
     dht11: DHT11Config = field(default_factory=DHT11Config)
+    actuators: ActuatorConfig = field(default_factory=ActuatorConfig)
     fatigue_policy: FatiguePolicyConfig = field(default_factory=FatiguePolicyConfig)
     cabin_safety: CabinSafetyConfig = field(default_factory=CabinSafetyConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
@@ -144,6 +157,7 @@ def _from_nested_dict(data: dict[str, Any]) -> DriverSafetyConfig:
         runtime=RuntimeConfig(**data.get("runtime", {})),
         camera=CameraConfig(**data.get("camera", {})),
         dht11=DHT11Config(**data.get("dht11", {})),
+        actuators=ActuatorConfig(**data.get("actuators", {})),
         fatigue_policy=FatiguePolicyConfig(**data.get("fatigue_policy", {})),
         cabin_safety=CabinSafetyConfig(**data.get("cabin_safety", {})),
         report=ReportConfig(**data.get("report", {})),
@@ -180,6 +194,12 @@ def _validate_config(config: DriverSafetyConfig) -> None:
         raise ValueError("camera.buffer_size must be >= 1 when set")
     if config.camera.fourcc is not None and len(config.camera.fourcc) != 4:
         raise ValueError("camera.fourcc must contain exactly 4 characters when set")
+    if config.actuators.pulse_seconds <= 0:
+        raise ValueError("actuators.pulse_seconds must be > 0")
+    if config.actuators.cooldown_seconds < 0:
+        raise ValueError("actuators.cooldown_seconds must be >= 0")
+    if config.actuators.buzzer_gpio == config.actuators.led_gpio:
+        raise ValueError("actuators.buzzer_gpio and actuators.led_gpio must be different")
     if config.thresholds.phone_use_frames < 1:
         raise ValueError("thresholds.phone_use_frames must be >= 1")
     if config.thresholds.phone_hold_frames < 0:

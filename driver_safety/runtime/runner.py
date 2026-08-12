@@ -22,6 +22,7 @@ from driver_safety.reporting.exports import export_run_artifacts
 from driver_safety.reporting.recorder import SessionRecorder
 from driver_safety.runtime.audio_alerts import AudioAlertPlayer
 from driver_safety.runtime.dht11 import DHT11Reader
+from driver_safety.runtime.gpio_actuators import GpioAlertActuator
 from driver_safety.vision.pipeline import DriverSafetyPipeline
 
 
@@ -99,6 +100,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     pipeline = DriverSafetyPipeline(config)
     dht11_reader = DHT11Reader(config.dht11)
     audio_player = AudioAlertPlayer()
+    gpio_actuator = GpioAlertActuator(config.actuators)
     source_fps = float(config.camera.fps or source.fps or 30.0)
     target_display_fps = float(config.runtime.output_fps or source_fps or 30.0)
     display_interval = 1.0 / max(1.0, target_display_fps)
@@ -140,6 +142,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
             packet.telemetry.update(dht11_reader.read(packet.timestamp))
             processed = pipeline.process_frame(packet)
             audio_player.handle_events(processed.events, now=packet.timestamp)
+            gpio_actuator.handle_events(processed.events, now=packet.timestamp)
             if config.runtime.debug_frames:
                 _print_debug_frame(processed)
             with lock:
@@ -185,6 +188,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     finally:
         stop_worker = True
         worker.join(timeout=0.5)
+        gpio_actuator.close()
         audio_player.close()
         source.close()
         cv2.destroyAllWindows()

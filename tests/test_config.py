@@ -24,6 +24,9 @@ def test_camera_config_loaded() -> None:
     assert config.camera.height == 240
     assert config.camera.fps == 30
     assert config.camera.buffer_size == 1
+    assert config.actuators.enabled is True
+    assert config.actuators.buzzer_gpio == 18
+    assert config.actuators.led_gpio == 23
 
 
 def test_invalid_fatigue_policy_rejected(tmp_path: Path) -> None:
