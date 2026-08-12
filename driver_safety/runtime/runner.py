@@ -205,14 +205,19 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
             packet = source.latest()
             if packet.frame_index != last_camera_frame_index:
                 camera_frame_at = perf_counter()
+                frame_delta = (
+                    packet.frame_index - last_camera_frame_index
+                    if last_camera_frame_index >= 0
+                    else 0
+                )
                 last_camera_frame_index = packet.frame_index
                 if last_camera_frame_at is not None:
                     camera_delta = camera_frame_at - last_camera_frame_at
                 else:
                     camera_delta = 0.0
                 last_camera_frame_at = camera_frame_at
-                if camera_delta > 0:
-                    instant_camera_fps = 1.0 / camera_delta
+                if camera_delta > 0 and frame_delta > 0:
+                    instant_camera_fps = frame_delta / camera_delta
                     camera_fps_estimate = (
                         instant_camera_fps
                         if camera_fps_estimate <= 0
@@ -225,7 +230,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
 
             processed = read_latest_processed()
             packet.telemetry["display_fps"] = display_fps_estimate
-            packet.telemetry["camera_fps"] = camera_fps_estimate
+            packet.telemetry["camera_fps"] = camera_fps_estimate or source_fps
             if config.runtime.minimal_overlay:
                 frame = packet.frame.copy()
                 if processed is not None:
