@@ -12,6 +12,7 @@ class ThresholdConfig:
     eye_aspect_ratio: float = 0.22
     mouth_aspect_ratio: float = 0.5
     head_offset: float = 0.42
+    head_pose_offset: float = 0.14
     phone_confidence: float = 0.45
     phone_use_frames: int = 2
     phone_hold_frames: int = 12
@@ -161,7 +162,7 @@ def _deep_update(target: dict[str, Any], update: dict[str, Any]) -> None:
 def _validate_config(config: DriverSafetyConfig) -> None:
     if config.vision.process_every_n_frames < 1:
         raise ValueError("vision.process_every_n_frames must be >= 1")
-    for field_name in ("eye_aspect_ratio", "mouth_aspect_ratio", "head_offset"):
+    for field_name in ("eye_aspect_ratio", "mouth_aspect_ratio", "head_offset", "head_pose_offset"):
         value = getattr(config.thresholds, field_name)
         if not 0 < value < 1.5:
             raise ValueError(f"thresholds.{field_name} must be within a sensible range")

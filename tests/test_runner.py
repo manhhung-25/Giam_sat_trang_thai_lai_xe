@@ -123,6 +123,41 @@ def test_skin_hand_provider_emits_phone_use_near_face() -> None:
     assert [event for event in result.events if event.signal == "phone_use"]
 
 
+def test_phone_occlusion_provider_emits_phone_use_on_lower_face() -> None:
+    config = load_config(Path("configs/raspi5-realtime.yaml"))
+    config.thresholds.phone_use_frames = 1
+    config.thresholds.phone_confidence = 0.75
+    config.object_detector.enabled = True
+    config.object_detector.process_interval_seconds = 0.0
+    pipeline = DriverSafetyPipeline(
+        config,
+        face_detector=_StaticFaceDetector(),
+    )
+    frame = np.full((180, 320, 3), 220, dtype=np.uint8)
+    frame[82:132, 155:190] = (8, 8, 8)
+
+    result = pipeline.process_frame(FramePacket(frame=frame, timestamp=0.0, frame_index=0))
+
+    assert [event for event in result.events if event.signal == "phone_use"]
+
+
+def test_head_pose_marks_driver_distracted_when_looking_away() -> None:
+    config = load_config(Path("configs/raspi5-realtime.yaml"))
+    config.thresholds.distracted_frames = 1
+    config.thresholds.head_pose_offset = 0.12
+    config.object_detector.enabled = False
+    pipeline = DriverSafetyPipeline(
+        config,
+        face_detector=_StaticFaceDetector(pose_nose=(135, 90)),
+    )
+    frame = np.zeros((180, 320, 3), dtype=np.uint8)
+
+    result = pipeline.process_frame(FramePacket(frame=frame, timestamp=0.0, frame_index=0))
+
+    assert result.state == DriverState.DISTRACTED
+    assert [event for event in result.events if event.signal == "distracted"]
+
+
 def test_cabin_left_behind_alert_when_driver_absent_with_occupant() -> None:
     config = load_config(Path("configs/default.yaml"))
     config.thresholds.missing_face_frames = 1
@@ -178,6 +213,9 @@ class _NoFaceDetector:
 class _StaticFaceDetector:
     provider = "test"
 
+    def __init__(self, pose_nose: tuple[int, int] = (160, 90)) -> None:
+        self.pose_nose = pose_nose
+
     def detect(self, packet: FramePacket) -> list[FaceObservation]:
         return [
             FaceObservation(
@@ -200,7 +238,7 @@ class _StaticFaceDetector:
                         (170, 110),
                         (150, 110),
                     ],
-                    "pose": [(160, 90), (140, 75), (180, 75), (145, 105), (175, 105)],
+                    "pose": [self.pose_nose, (140, 75), (180, 75), (145, 105), (175, 105)],
                 },
             )
         ]

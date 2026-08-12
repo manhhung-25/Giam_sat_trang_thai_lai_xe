@@ -113,17 +113,18 @@ def _draw_signal_strip(frame: Array, processed: ProcessedFrame, width: int, heig
     cv2.line(frame, (0, y0), (width, y0), HUD_BORDER, 1, cv2.LINE_AA)
 
     labels = [
-        ("mat", "eyes_closed"),
-        ("ngu", "drowsy"),
-        ("ngap", "yawning"),
-        ("tap trung", "distracted"),
-        ("dien thoai", "phone_use"),
+        ("mat", "eyes_closed", False),
+        ("ngu", "drowsy", False),
+        ("ngap", "yawning", False),
+        ("tap trung", "distracted", True),
+        ("dien thoai", "phone_use", False),
     ]
     col_w = max(1, width // len(labels))
-    for idx, (label, signal) in enumerate(labels):
+    for idx, (label, signal, invert) in enumerate(labels):
         x = idx * col_w + 6
-        value = _clamp(processed.signals.get(signal, 0.0))
-        color = _signal_color(signal, value)
+        raw_value = _clamp(processed.signals.get(signal, 0.0))
+        value = 1.0 - raw_value if invert else raw_value
+        color = _attention_color(value) if invert else _signal_color(signal, value)
         label_scale = 0.27 if len(label) > 6 else 0.32
         _text(frame, label, x, y0 + 17, label_scale, MUTED, 1)
         _bar(frame, x, y0 + 24, max(22, col_w - 12), 7, value, color)
@@ -270,6 +271,14 @@ def _signal_color(label: str, value: float) -> tuple[int, int, int]:
     if label == "eyes_closed" and value >= 0.45:
         return CYAN
     return MINT if value < 0.45 else AMBER
+
+
+def _attention_color(value: float) -> tuple[int, int, int]:
+    if value < 0.35:
+        return ROSE
+    if value < 0.65:
+        return AMBER
+    return MINT
 
 
 def _clamp(value: float) -> float:

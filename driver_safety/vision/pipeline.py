@@ -261,6 +261,10 @@ class DriverSafetyPipeline:
         fx, fy, fw, fh = face_bbox
         if fw <= 0 or fh <= 0:
             return []
+        observations: list[ObjectObservation] = []
+        occluding_phone = _phone_occlusion_observation(frame, face_bbox)
+        if occluding_phone is not None:
+            observations.append(occluding_phone)
 
         zone_w = max(12, int(fw * 0.42))
         y1 = max(0, fy + int(fh * 0.08))
@@ -297,19 +301,23 @@ class DriverSafetyPipeline:
                 best = (ratio, (x1, zy1, x2 - x1, zy2 - zy1))
 
         if best is None:
-            return []
+            return observations
         ratio, bbox = best
         if ratio < self.config.object_detector.skin_hand_min_ratio:
-            return []
-        confidence = min(0.99, ratio / max(self.config.object_detector.skin_hand_min_ratio, 1e-6))
-        return [
+            return observations
+        confidence = min(
+            0.68,
+            0.45 + 0.12 * ratio / max(self.config.object_detector.skin_hand_min_ratio, 1e-6),
+        )
+        observations.append(
             ObjectObservation(
                 label="phone",
                 confidence=confidence,
                 bbox=bbox,
                 provider="skin_hand",
             )
-        ]
+        )
+        return observations
 
     def _update_driving_clock(self, timestamp: float) -> None:
         if self._last_timestamp is None:
@@ -402,11 +410,16 @@ class DriverSafetyPipeline:
         ear = (left_ear + right_ear) / 2.0
         mar = mouth_aspect_ratio(landmarks["mouth"])
         head_offset = horizontal_head_offset(bbox, packet.frame.shape[1])
+        head_pose_offset = _head_pose_offset(bbox, landmarks.get("pose", []))
+        looking_away = (
+            head_offset > thresholds.head_offset
+            or head_pose_offset > thresholds.head_pose_offset
+        )
 
         self._closed_counter = self._closed_counter + 1 if ear < thresholds.eye_aspect_ratio else 0
         self._yawn_counter = self._yawn_counter + 1 if mar > thresholds.mouth_aspect_ratio else 0
         self._distracted_counter = (
-            self._distracted_counter + 1 if head_offset > thresholds.head_offset else 0
+            self._distracted_counter + 1 if looking_away else 0
         )
 
         return {
@@ -418,6 +431,7 @@ class DriverSafetyPipeline:
             "ear": round(ear, 4),
             "mar": round(mar, 4),
             "head_offset": round(head_offset, 4),
+            "head_pose_offset": round(head_pose_offset, 4),
         }
 
     def _events_from_signals(
@@ -512,3 +526,88 @@ class DriverSafetyPipeline:
 
 def create_pipeline(config: DriverSafetyConfig | None = None) -> DriverSafetyPipeline:
     return DriverSafetyPipeline(config or DriverSafetyConfig())
+
+
+def _head_pose_offset(
+    face_bbox: tuple[int, int, int, int],
+    pose_landmarks: list[tuple[float, float]],
+) -> float:
+    if not pose_landmarks:
+        return 0.0
+    fx, fy, fw, fh = face_bbox
+    if fw <= 0 or fh <= 0:
+        return 0.0
+    nose_x, nose_y = pose_landmarks[0]
+    x_offset = abs((nose_x - (fx + fw * 0.5)) / fw)
+    y_offset = abs((nose_y - (fy + fh * 0.52)) / fh)
+    return float(max(x_offset, y_offset))
+
+
+def _phone_occlusion_observation(
+    frame,
+    face_bbox: tuple[int, int, int, int],
+) -> ObjectObservation | None:
+    frame_h, frame_w = frame.shape[:2]
+    fx, fy, fw, fh = face_bbox
+    x1 = max(0, fx - int(fw * 0.25))
+    x2 = min(frame_w, fx + fw + int(fw * 0.25))
+    y1 = max(0, fy + int(fh * 0.34))
+    y2 = min(frame_h, fy + int(fh * 1.05))
+    if x2 <= x1 or y2 <= y1:
+        return None
+
+    roi = frame[y1:y2, x1:x2]
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    dark_mask = cv2.inRange(gray, 0, 82)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    dark_mask = cv2.morphologyEx(dark_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+    contours, _ = cv2.findContours(dark_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+
+    face_area = float(fw * fh)
+    best: tuple[float, tuple[int, int, int, int]] | None = None
+    for contour in contours:
+        area = float(cv2.contourArea(contour))
+        if area <= 0:
+            continue
+        cx, cy, cw, ch = cv2.boundingRect(contour)
+        bx, by = x1 + cx, y1 + cy
+        area_ratio = area / max(1.0, face_area)
+        if not 0.025 <= area_ratio <= 0.42:
+            continue
+        aspect = cw / max(1.0, float(ch))
+        if not 0.25 <= aspect <= 2.4:
+            continue
+        if cw < fw * 0.14 and ch < fh * 0.22:
+            continue
+
+        ix1 = max(bx, fx)
+        iy1 = max(by, fy)
+        ix2 = min(bx + cw, fx + fw)
+        iy2 = min(by + ch, fy + fh)
+        intersects_face = ix2 > ix1 and iy2 > iy1
+        center_x = bx + cw * 0.5
+        center_y = by + ch * 0.5
+        lower_face = center_y > fy + fh * 0.38
+        side_or_face_overlap = (
+            intersects_face
+            or center_x < fx + fw * 0.20
+            or center_x > fx + fw * 0.80
+        )
+        if not lower_face or not side_or_face_overlap:
+            continue
+
+        score = min(0.99, 0.72 + min(0.24, area_ratio) / 0.24 * 0.27)
+        if best is None or score > best[0]:
+            best = (score, (bx, by, cw, ch))
+
+    if best is None:
+        return None
+    confidence, bbox = best
+    return ObjectObservation(
+        label="phone",
+        confidence=confidence,
+        bbox=bbox,
+        provider="face_occlusion",
+    )
