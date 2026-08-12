@@ -108,7 +108,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--phone-model",
-        default="yolo11s.pt",
+        default="yolo11n.pt",
         help="Ultralytics model to export for phone/object detection.",
     )
     parser.add_argument("--out", default="models", help="Model output directory.")

@@ -67,6 +67,7 @@ def test_phone_use_persists_through_short_detector_dropouts() -> None:
     config.thresholds.phone_confidence = 0.5
     config.thresholds.phone_use_frames = 1
     config.thresholds.phone_hold_frames = 2
+    config.object_detector.process_interval_seconds = 0.0
     pipeline = DriverSafetyPipeline(
         config,
         face_detector=_NoFaceDetector(),
@@ -83,6 +84,25 @@ def test_phone_use_persists_through_short_detector_dropouts() -> None:
     assert [event for event in second.events if event.signal == "phone_use"]
     assert [event for event in third.events if event.signal == "phone_use"]
     assert not [event for event in fourth.events if event.signal == "phone_use"]
+
+
+def test_object_detector_runs_on_configured_interval() -> None:
+    config = load_config(Path("configs/default.yaml"))
+    config.thresholds.missing_face_frames = 999
+    config.object_detector.process_interval_seconds = 10.0
+    object_detector = _CountingPhoneObjectDetector()
+    pipeline = DriverSafetyPipeline(
+        config,
+        face_detector=_NoFaceDetector(),
+        object_detector=object_detector,
+    )
+    frame = np.zeros((180, 320, 3), dtype=np.uint8)
+
+    pipeline.process_frame(FramePacket(frame=frame, timestamp=0.0, frame_index=0))
+    pipeline.process_frame(FramePacket(frame=frame, timestamp=5.0, frame_index=1))
+    pipeline.process_frame(FramePacket(frame=frame, timestamp=10.0, frame_index=2))
+
+    assert object_detector.calls == 2
 
 
 def test_cabin_left_behind_alert_when_driver_absent_with_occupant() -> None:
@@ -169,6 +189,15 @@ class _OneFramePhoneObjectDetector:
                 provider=self.provider,
             )
         ]
+
+
+class _CountingPhoneObjectDetector(_PhoneObjectDetector):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def detect(self, packet: FramePacket) -> list[ObjectObservation]:
+        self.calls += 1
+        return super().detect(packet)
 
 
 class _PassengerObjectDetector:

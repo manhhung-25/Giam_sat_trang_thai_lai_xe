@@ -79,30 +79,42 @@ def analyze_video(
 
 
 def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
-    source = WebcamFrameSource(index)
+    source = WebcamFrameSource(
+        index,
+        width=config.camera.width,
+        height=config.camera.height,
+        fps=config.camera.fps,
+        buffer_size=config.camera.buffer_size,
+        fourcc=config.camera.fourcc,
+    )
     pipeline = DriverSafetyPipeline(config)
     dht11_reader = DHT11Reader(config.dht11)
     audio_player = AudioAlertPlayer()
     try:
         for packet in source:
+            if packet.frame_index % config.vision.process_every_n_frames != 0:
+                continue
             packet.telemetry.update(dht11_reader.read(packet.timestamp))
             processed = pipeline.process_frame(packet)
             audio_player.handle_events(processed.events, now=packet.timestamp)
-            # Print concise per-frame diagnostics to console for realtime debugging
-            try:
-                events_signals = [e.signal for e in processed.events]
-                objects = [(o["label"], round(float(o["confidence"]), 3), tuple(o["bbox"])) for o in processed.objects]
-                phone_val = processed.signals.get("phone_use", 0.0)
-                distracted_val = processed.signals.get("distracted", 0.0)
-                print(
-                    f"[frame {packet.frame_index}] ts={packet.timestamp:.3f} pos={processed.driver_position}"
-                    f" risk={processed.risk_score:.2f} events={events_signals} objects={objects}"
-                    f" phone={phone_val:.3f} distracted={distracted_val:.3f}",
-                    flush=True,
-                )
-            except Exception:
-                # ensure logging doesn't break realtime loop
-                pass
+            if config.runtime.debug_frames:
+                try:
+                    events_signals = [e.signal for e in processed.events]
+                    objects = [
+                        (o["label"], round(float(o["confidence"]), 3), tuple(o["bbox"]))
+                        for o in processed.objects
+                    ]
+                    phone_val = processed.signals.get("phone_use", 0.0)
+                    distracted_val = processed.signals.get("distracted", 0.0)
+                    print(
+                        f"[frame {packet.frame_index}] ts={packet.timestamp:.3f} "
+                        f"pos={processed.driver_position} risk={processed.risk_score:.2f} "
+                        f"events={events_signals} objects={objects} phone={phone_val:.3f} "
+                        f"distracted={distracted_val:.3f}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
 
             frame = draw_overlay(processed)
             cv2.imshow("AI Driver Safety", frame)

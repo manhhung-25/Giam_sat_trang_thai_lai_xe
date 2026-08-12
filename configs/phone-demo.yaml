@@ -23,6 +23,7 @@ object_detector:
   labels_path: models/driver-objects.labels
   confidence_threshold: 0.03
   iou_threshold: 0.45
+  process_interval_seconds: 10.0
   phone_labels:
     - cell phone
     - phone

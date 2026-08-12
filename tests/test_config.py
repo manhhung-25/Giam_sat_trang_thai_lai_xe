@@ -18,6 +18,14 @@ def test_invalid_config_rejected(tmp_path: Path) -> None:
         load_config(path)
 
 
+def test_camera_config_loaded() -> None:
+    config = load_config(Path("configs/raspi5-realtime.yaml"))
+    assert config.camera.width == 640
+    assert config.camera.height == 480
+    assert config.camera.fps == 30
+    assert config.camera.buffer_size == 1
+
+
 def test_invalid_fatigue_policy_rejected(tmp_path: Path) -> None:
     path = tmp_path / "bad-fatigue.yaml"
     path.write_text(

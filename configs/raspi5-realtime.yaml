@@ -1,0 +1,34 @@
+thresholds:
+  eye_aspect_ratio: 0.21
+  mouth_aspect_ratio: 0.52
+  missing_face_frames: 10
+  eye_closed_frames: 6
+  drowsy_frames: 24
+  yawn_frames: 5
+  distracted_frames: 8
+vision:
+  provider: auto
+  face_landmarker_model: models/face_landmarker.task
+  fallback_to_haar: true
+  process_every_n_frames: 2
+  draw_landmarks: false
+object_detector:
+  enabled: false
+runtime:
+  output_fps: 15
+  max_frames: null
+  display: true
+  write_video: false
+  debug_frames: false
+  alert_cooldown_seconds: 2.0
+camera:
+  width: 640
+  height: 480
+  fps: 30
+  buffer_size: 1
+  fourcc: MJPG
+dht11:
+  enabled: true
+  simulate_when_missing: true
+report:
+  timeline_stride_frames: 5

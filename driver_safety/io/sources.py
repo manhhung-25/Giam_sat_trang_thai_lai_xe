@@ -44,11 +44,30 @@ class VideoFrameSource:
 
 
 class WebcamFrameSource:
-    def __init__(self, index: int = 0) -> None:
+    def __init__(
+        self,
+        index: int = 0,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+        fps: float | None = None,
+        buffer_size: int | None = 1,
+        fourcc: str | None = None,
+    ) -> None:
         self.index = index
         self.capture = cv2.VideoCapture(index)
         if not self.capture.isOpened():
             raise RuntimeError(f"Unable to open webcam index {index}")
+        if buffer_size is not None:
+            self.capture.set(cv2.CAP_PROP_BUFFERSIZE, buffer_size)
+        if fourcc:
+            self.capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
+        if width is not None:
+            self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        if height is not None:
+            self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        if fps is not None:
+            self.capture.set(cv2.CAP_PROP_FPS, fps)
         self.started = monotonic()
         self.frame_index = -1
         self.fps = float(self.capture.get(cv2.CAP_PROP_FPS) or 0) or 24.0

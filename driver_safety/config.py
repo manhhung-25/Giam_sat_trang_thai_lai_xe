@@ -39,6 +39,7 @@ class ObjectDetectorConfig:
     labels_path: str = "models/driver-objects.labels"
     confidence_threshold: float = 0.25
     iou_threshold: float = 0.45
+    process_interval_seconds: float = 0.0
     phone_labels: list[str] = field(default_factory=lambda: ["cell phone", "phone", "mobile"])
 
 
@@ -48,7 +49,17 @@ class RuntimeConfig:
     max_frames: int | None = None
     display: bool = False
     write_video: bool = True
+    debug_frames: bool = False
     alert_cooldown_seconds: float = 2.0
+
+
+@dataclass(slots=True)
+class CameraConfig:
+    width: int | None = None
+    height: int | None = None
+    fps: float | None = None
+    buffer_size: int | None = 1
+    fourcc: str | None = None
 
 
 @dataclass(slots=True)
@@ -89,6 +100,7 @@ class DriverSafetyConfig:
     vision: VisionConfig = field(default_factory=VisionConfig)
     object_detector: ObjectDetectorConfig = field(default_factory=ObjectDetectorConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    camera: CameraConfig = field(default_factory=CameraConfig)
     dht11: DHT11Config = field(default_factory=DHT11Config)
     fatigue_policy: FatiguePolicyConfig = field(default_factory=FatiguePolicyConfig)
     cabin_safety: CabinSafetyConfig = field(default_factory=CabinSafetyConfig)
@@ -124,6 +136,7 @@ def _from_nested_dict(data: dict[str, Any]) -> DriverSafetyConfig:
         vision=VisionConfig(**data.get("vision", {})),
         object_detector=ObjectDetectorConfig(**data.get("object_detector", {})),
         runtime=RuntimeConfig(**data.get("runtime", {})),
+        camera=CameraConfig(**data.get("camera", {})),
         dht11=DHT11Config(**data.get("dht11", {})),
         fatigue_policy=FatiguePolicyConfig(**data.get("fatigue_policy", {})),
         cabin_safety=CabinSafetyConfig(**data.get("cabin_safety", {})),
@@ -149,6 +162,16 @@ def _validate_config(config: DriverSafetyConfig) -> None:
             raise ValueError(f"thresholds.{field_name} must be within a sensible range")
     if config.runtime.max_frames is not None and config.runtime.max_frames < 1:
         raise ValueError("runtime.max_frames must be >= 1 when set")
+    if config.camera.width is not None and config.camera.width < 1:
+        raise ValueError("camera.width must be >= 1 when set")
+    if config.camera.height is not None and config.camera.height < 1:
+        raise ValueError("camera.height must be >= 1 when set")
+    if config.camera.fps is not None and config.camera.fps <= 0:
+        raise ValueError("camera.fps must be > 0 when set")
+    if config.camera.buffer_size is not None and config.camera.buffer_size < 1:
+        raise ValueError("camera.buffer_size must be >= 1 when set")
+    if config.camera.fourcc is not None and len(config.camera.fourcc) != 4:
+        raise ValueError("camera.fourcc must contain exactly 4 characters when set")
     if config.thresholds.phone_use_frames < 1:
         raise ValueError("thresholds.phone_use_frames must be >= 1")
     if config.thresholds.phone_hold_frames < 0:
@@ -157,6 +180,8 @@ def _validate_config(config: DriverSafetyConfig) -> None:
         raise ValueError("object_detector.confidence_threshold must be between 0 and 1")
     if not 0 < config.object_detector.iou_threshold < 1:
         raise ValueError("object_detector.iou_threshold must be between 0 and 1")
+    if config.object_detector.process_interval_seconds < 0:
+        raise ValueError("object_detector.process_interval_seconds must be >= 0")
     if config.fatigue_policy.rest_recommendation_seconds <= 0:
         raise ValueError("fatigue_policy.rest_recommendation_seconds must be > 0")
     if config.fatigue_policy.mandatory_rest_seconds <= 0:

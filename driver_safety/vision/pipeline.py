@@ -52,6 +52,8 @@ class DriverSafetyPipeline:
         self._rest_recommendation_issued = False
         self._mandatory_rest_issued = False
         self._last_timestamp: float | None = None
+        self._last_object_detection_at: float | None = None
+        self._cached_object_observations: list[ObjectObservation] = []
         self._driving_seconds_today = config.fatigue_policy.initial_driving_seconds_today
         self._last_climate_alert_at: float | None = None
 
@@ -103,7 +105,7 @@ class DriverSafetyPipeline:
             raw_signals.update(self._face_signals(packet, observation.bbox, observation.landmarks))
             events.extend(self._events_from_signals(packet, raw_signals, face_bbox, landmarks))
 
-        object_observations = self.object_detector.detect(packet)
+        object_observations = self._object_observations(packet)
         phone_labels = {label.lower() for label in self.config.object_detector.phone_labels}
         occupant_labels = {label.lower() for label in self.config.cabin_safety.occupant_labels}
         best_phone = None
@@ -221,6 +223,18 @@ class DriverSafetyPipeline:
             objects=[obj.to_dict() for obj in display_objects],
             driver_position=driver_position,
         )
+
+    def _object_observations(self, packet: FramePacket) -> list[ObjectObservation]:
+        interval = self.config.object_detector.process_interval_seconds
+        should_detect = (
+            interval <= 0
+            or self._last_object_detection_at is None
+            or packet.timestamp - self._last_object_detection_at >= interval
+        )
+        if should_detect:
+            self._cached_object_observations = self.object_detector.detect(packet)
+            self._last_object_detection_at = packet.timestamp
+        return self._cached_object_observations
 
     def _update_driving_clock(self, timestamp: float) -> None:
         if self._last_timestamp is None:
