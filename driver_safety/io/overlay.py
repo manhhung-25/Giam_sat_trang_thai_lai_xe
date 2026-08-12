@@ -16,7 +16,7 @@ HUD_BG = (18, 22, 26)
 HUD_PANEL = (26, 32, 37)
 HUD_BORDER = (70, 82, 90)
 TEXT = (242, 245, 247)
-MUTED = (154, 167, 175)
+MUTED = (188, 198, 204)
 TRACK = (51, 58, 63)
 MINT = (56, 217, 150)
 CYAN = (76, 201, 240)
@@ -66,11 +66,11 @@ def draw_overlay_with_status_panel(
     processed: ProcessedFrame,
     *,
     recent_events: list[LocalEventLogRow] | None = None,
-    panel_width: int = 260,
+    panel_width: int = 340,
 ) -> Array:
     overlay = draw_overlay(processed)
     h, w = overlay.shape[:2]
-    panel_width = max(220, panel_width)
+    panel_width = max(300, panel_width)
     canvas = np.full((h, w + panel_width, 3), HUD_BG, dtype=overlay.dtype)
     canvas[:, :w] = overlay
     _draw_status_panel(canvas, processed, recent_events or [], w, panel_width, h)
@@ -106,25 +106,27 @@ def _draw_status_panel(
 ) -> None:
     cv2.rectangle(frame, (x0, 0), (x0 + width, height), HUD_BG, -1)
     cv2.line(frame, (x0, 0), (x0, height), HUD_BORDER, 1, cv2.LINE_AA)
-    pad = 14
+    pad = 18
     x = x0 + pad
     right = x0 + width - pad
-    y = 26
+    y = 30
 
-    _text(frame, "HE THONG", x, y, 0.48, TEXT, 2)
-    y += 18
-    _text(frame, "Raspberry Pi 5 telemetry", x, y, 0.30, MUTED, 1)
-    y += 24
+    _text(frame, "HE THONG", x, y, 0.58, TEXT, 2)
+    y += 22
+    _text(frame, "Du lieu that tu Raspberry Pi 5", x, y, 0.38, MUTED, 1)
+    y += 30
 
     telemetry = processed.packet.telemetry
     y = _metric_row(frame, "CPU", _fmt_percent(telemetry.get("cpu_percent")), x, right, y)
     y = _metric_row(frame, "RAM", _fmt_ram(telemetry), x, right, y)
     y = _metric_row(frame, "Chip", _fmt_temp(telemetry.get("chip_temperature_c")), x, right, y)
-    y += 12
+    y += 16
 
-    _text(frame, "HIEN THI", x, y, 0.38, TEXT, 1)
-    y += 22
-    y = _metric_row(frame, "FPS", _fmt_number(telemetry.get("display_fps"), "fps"), x, right, y)
+    _text(frame, "HIEN THI", x, y, 0.46, TEXT, 2)
+    y += 26
+    y = _metric_row(frame, "Cam FPS", _fmt_number(telemetry.get("camera_fps"), "fps"), x, right, y)
+    y = _metric_row(frame, "Display FPS", _fmt_number(telemetry.get("display_fps"), "fps"), x, right, y)
+    y = _metric_row(frame, "AI FPS", _fmt_number(telemetry.get("analysis_fps"), "fps"), x, right, y)
     y = _metric_row(frame, "AI latency", f"{processed.latency_ms:.1f} ms", x, right, y)
     y = _metric_row(
         frame,
@@ -134,33 +136,33 @@ def _draw_status_panel(
         right,
         y,
     )
-    y += 12
+    y += 16
 
-    _text(frame, "NHAT KY SU KIEN", x, y, 0.38, TEXT, 1)
-    y += 22
+    _text(frame, "NHAT KY SU KIEN", x, y, 0.46, TEXT, 2)
+    y += 26
     if not recent_events:
-        _text(frame, "Chua co canh bao", x, y, 0.32, MUTED, 1)
+        _text(frame, "Chua co canh bao", x, y, 0.40, MUTED, 1)
         return
 
-    line_h = 32
+    line_h = 42
     for row in recent_events[: max(1, (height - y - 10) // line_h)]:
         color = ROSE if row.severity == "critical" else AMBER
         time_label = row.wall_time.split("T")[-1][:12]
         label = _event_signal_label(row.signal)
-        cv2.rectangle(frame, (x, y - 12), (right, y + 16), HUD_PANEL, -1)
-        cv2.line(frame, (x, y - 12), (x, y + 16), color, 2, cv2.LINE_AA)
-        _text(frame, f"{time_label}  {label}", x + 8, y, 0.31, TEXT, 1)
+        cv2.rectangle(frame, (x, y - 15), (right, y + 21), HUD_PANEL, -1)
+        cv2.line(frame, (x, y - 15), (x, y + 21), color, 3, cv2.LINE_AA)
+        _text(frame, f"{time_label}  {label}", x + 10, y, 0.38, TEXT, 1)
         resp = "--" if row.alert_response_ms is None else f"{row.alert_response_ms:.1f} ms"
-        _text(frame, f"risk {row.risk_score:.2f}  resp {resp}", x + 8, y + 13, 0.26, MUTED, 1)
+        _text(frame, f"risk {row.risk_score:.2f}  resp {resp}", x + 10, y + 16, 0.32, MUTED, 1)
         y += line_h
 
 
 def _metric_row(frame: Array, label: str, value: str, x: int, right: int, y: int) -> int:
-    cv2.rectangle(frame, (x, y - 14), (right, y + 8), HUD_PANEL, -1)
-    _text(frame, label, x + 8, y, 0.32, MUTED, 1)
-    size = cv2.getTextSize(value, cv2.FONT_HERSHEY_SIMPLEX, 0.32, 1)[0]
-    _text(frame, value, max(x + 82, right - size[0] - 8), y, 0.32, TEXT, 1)
-    return y + 28
+    cv2.rectangle(frame, (x, y - 18), (right, y + 12), HUD_PANEL, -1)
+    _text(frame, label, x + 10, y, 0.42, MUTED, 1)
+    size = cv2.getTextSize(value, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)[0]
+    _text(frame, value, max(x + 126, right - size[0] - 10), y, 0.42, TEXT, 1)
+    return y + 38
 
 
 def _draw_top_hud(

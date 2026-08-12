@@ -112,7 +112,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     display_interval = 1.0 / max(1.0, target_display_fps)
     analysis_interval = config.vision.process_every_n_frames / max(1.0, source_fps)
     display_scale = float(config.runtime.display_scale)
-    status_panel_width = 260
+    status_panel_width = 340
     window_name = "AI Driver Safety"
     if display_scale != 1.0:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -128,6 +128,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     pending_packet: FramePacket | None = None
     latest_processed: ProcessedFrame | None = None
     stop_worker = False
+    analysis_stats = {"last_completed_at": perf_counter(), "fps_estimate": 0.0}
 
     def submit_for_analysis(packet: FramePacket) -> None:
         nonlocal pending_packet
@@ -151,6 +152,17 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
             packet.telemetry.update(dht11_reader.read(packet.timestamp))
             packet.telemetry.update(metrics_reader.read().to_telemetry())
             processed = pipeline.process_frame(packet)
+            analysis_completed_at = perf_counter()
+            analysis_delta = analysis_completed_at - analysis_stats["last_completed_at"]
+            analysis_stats["last_completed_at"] = analysis_completed_at
+            if analysis_delta > 0:
+                instant_analysis_fps = 1.0 / analysis_delta
+                analysis_stats["fps_estimate"] = (
+                    instant_analysis_fps
+                    if analysis_stats["fps_estimate"] <= 0
+                    else analysis_stats["fps_estimate"] * 0.85 + instant_analysis_fps * 0.15
+                )
+                processed.packet.telemetry["analysis_fps"] = analysis_stats["fps_estimate"]
             alert_response_ms = None
             if processed.events:
                 submitted_at = packet.telemetry.get("analysis_submitted_perf_counter")
@@ -174,6 +186,9 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     worker.start()
     last_submitted_at = -analysis_interval
     display_fps_estimate = 0.0
+    camera_fps_estimate = 0.0
+    last_camera_frame_index = -1
+    last_camera_frame_at: float | None = None
     last_display_at = perf_counter()
     try:
         while True:
@@ -188,6 +203,21 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
                     else display_fps_estimate * 0.9 + instant_fps * 0.1
                 )
             packet = source.latest()
+            if packet.frame_index != last_camera_frame_index:
+                camera_frame_at = perf_counter()
+                last_camera_frame_index = packet.frame_index
+                if last_camera_frame_at is not None:
+                    camera_delta = camera_frame_at - last_camera_frame_at
+                else:
+                    camera_delta = 0.0
+                last_camera_frame_at = camera_frame_at
+                if camera_delta > 0:
+                    instant_camera_fps = 1.0 / camera_delta
+                    camera_fps_estimate = (
+                        instant_camera_fps
+                        if camera_fps_estimate <= 0
+                        else camera_fps_estimate * 0.9 + instant_camera_fps * 0.1
+                    )
             packet.telemetry.update(metrics_reader.read().to_telemetry())
             if packet.timestamp - last_submitted_at >= analysis_interval:
                 submit_for_analysis(packet)
@@ -195,11 +225,14 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
 
             processed = read_latest_processed()
             packet.telemetry["display_fps"] = display_fps_estimate
+            packet.telemetry["camera_fps"] = camera_fps_estimate
             if config.runtime.minimal_overlay:
                 frame = packet.frame.copy()
                 if processed is not None:
                     frame = draw_minimal_overlay_on_frame(frame, processed)
             elif processed is not None:
+                if "analysis_fps" in processed.packet.telemetry:
+                    packet.telemetry["analysis_fps"] = processed.packet.telemetry["analysis_fps"]
                 if "alert_response_ms" in processed.packet.telemetry:
                     packet.telemetry["alert_response_ms"] = processed.packet.telemetry[
                         "alert_response_ms"
