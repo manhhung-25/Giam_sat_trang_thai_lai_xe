@@ -148,15 +148,27 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     worker = Thread(target=analysis_worker, daemon=True)
     worker.start()
     last_submitted_at = -analysis_interval
+    display_fps_estimate = 0.0
+    last_display_at = perf_counter()
     try:
         while True:
             frame_started = perf_counter()
+            display_delta = frame_started - last_display_at
+            last_display_at = frame_started
+            if display_delta > 0:
+                instant_fps = 1.0 / display_delta
+                display_fps_estimate = (
+                    instant_fps
+                    if display_fps_estimate <= 0
+                    else display_fps_estimate * 0.9 + instant_fps * 0.1
+                )
             packet = source.latest()
             if packet.timestamp - last_submitted_at >= analysis_interval:
                 submit_for_analysis(packet)
                 last_submitted_at = packet.timestamp
 
             processed = read_latest_processed()
+            packet.telemetry["display_fps"] = display_fps_estimate
             if config.runtime.minimal_overlay:
                 frame = packet.frame.copy()
                 if processed is not None:
