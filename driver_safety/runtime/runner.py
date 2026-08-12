@@ -16,13 +16,16 @@ from driver_safety.io.overlay import (
     AnnotatedVideoWriter,
     draw_minimal_overlay_on_frame,
     draw_overlay,
+    draw_overlay_with_status_panel,
 )
 from driver_safety.io.sources import VideoFrameSource, WebcamFrameSource
 from driver_safety.reporting.exports import export_run_artifacts
 from driver_safety.reporting.recorder import SessionRecorder
 from driver_safety.runtime.audio_alerts import AudioAlertPlayer
 from driver_safety.runtime.dht11 import DHT11Reader
+from driver_safety.runtime.event_logger import LocalEventLogger
 from driver_safety.runtime.gpio_actuators import GpioAlertActuator
+from driver_safety.runtime.system_metrics import SystemMetricsReader
 from driver_safety.vision.pipeline import DriverSafetyPipeline
 
 
@@ -99,20 +102,25 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     )
     pipeline = DriverSafetyPipeline(config)
     dht11_reader = DHT11Reader(config.dht11)
+    metrics_reader = SystemMetricsReader()
     audio_player = AudioAlertPlayer()
     gpio_actuator = GpioAlertActuator(config.actuators, verbose=config.actuators.enabled)
+    run_dir = Path("runs/realtime") / datetime.now().strftime("%Y%m%d-%H%M%S")
+    event_logger = LocalEventLogger(run_dir)
     source_fps = float(config.camera.fps or source.fps or 30.0)
     target_display_fps = float(config.runtime.output_fps or source_fps or 30.0)
     display_interval = 1.0 / max(1.0, target_display_fps)
     analysis_interval = config.vision.process_every_n_frames / max(1.0, source_fps)
     display_scale = float(config.runtime.display_scale)
+    status_panel_width = 260
     window_name = "AI Driver Safety"
     if display_scale != 1.0:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         if config.camera.width and config.camera.height:
+            extra_width = 0 if config.runtime.minimal_overlay else status_panel_width
             cv2.resizeWindow(
                 window_name,
-                int(config.camera.width * display_scale),
+                int((config.camera.width + extra_width) * display_scale),
                 int(config.camera.height * display_scale),
             )
 
@@ -123,6 +131,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
 
     def submit_for_analysis(packet: FramePacket) -> None:
         nonlocal pending_packet
+        packet.telemetry["analysis_submitted_perf_counter"] = perf_counter()
         with lock:
             pending_packet = packet
 
@@ -140,7 +149,20 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
                 sleep(0.001)
                 continue
             packet.telemetry.update(dht11_reader.read(packet.timestamp))
+            packet.telemetry.update(metrics_reader.read().to_telemetry())
             processed = pipeline.process_frame(packet)
+            alert_response_ms = None
+            if processed.events:
+                submitted_at = packet.telemetry.get("analysis_submitted_perf_counter")
+                if submitted_at is not None:
+                    alert_response_ms = max(0.0, (perf_counter() - submitted_at) * 1000.0)
+                if alert_response_ms is not None:
+                    processed.packet.telemetry["alert_response_ms"] = alert_response_ms
+                event_logger.write_events(
+                    processed.events,
+                    risk_score=processed.risk_score,
+                    alert_response_ms=alert_response_ms,
+                )
             audio_player.handle_events(processed.events, now=packet.timestamp)
             gpio_actuator.handle_events(processed.events, now=packet.timestamp)
             if config.runtime.debug_frames:
@@ -166,6 +188,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
                     else display_fps_estimate * 0.9 + instant_fps * 0.1
                 )
             packet = source.latest()
+            packet.telemetry.update(metrics_reader.read().to_telemetry())
             if packet.timestamp - last_submitted_at >= analysis_interval:
                 submit_for_analysis(packet)
                 last_submitted_at = packet.timestamp
@@ -177,7 +200,15 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
                 if processed is not None:
                     frame = draw_minimal_overlay_on_frame(frame, processed)
             elif processed is not None:
-                frame = draw_overlay(replace(processed, packet=packet))
+                if "alert_response_ms" in processed.packet.telemetry:
+                    packet.telemetry["alert_response_ms"] = processed.packet.telemetry[
+                        "alert_response_ms"
+                    ]
+                frame = draw_overlay_with_status_panel(
+                    replace(processed, packet=packet),
+                    recent_events=event_logger.recent,
+                    panel_width=status_panel_width,
+                )
             else:
                 frame = packet.frame
 
@@ -189,6 +220,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
         stop_worker = True
         worker.join(timeout=0.5)
         gpio_actuator.close()
+        event_logger.close()
         audio_player.close()
         source.close()
         cv2.destroyAllWindows()
