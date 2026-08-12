@@ -37,6 +37,7 @@ camera:
   fps: 30
   buffer_size: 1
   fourcc: MJPG
+  threaded: true
 dht11:
   enabled: false
   simulate_when_missing: true
