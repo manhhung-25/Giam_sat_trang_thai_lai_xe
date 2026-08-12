@@ -69,7 +69,7 @@ def draw_minimal_overlay_on_frame(frame: Array, processed: ProcessedFrame) -> Ar
     state_color = STATE_COLORS.get(processed.state, TEXT)
     fps = processed.packet.telemetry.get("display_fps")
     fps_text = f" FPS {fps:.1f}" if fps is not None else ""
-    label = f"{_state_label(processed.state)}  RISK {processed.risk_score:.2f}{fps_text}"
+    label = f"{_state_label(processed.state)}  RUI RO {processed.risk_score:.2f}{fps_text}"
     _text(frame, label, 10, 24, 0.5, state_color, 2)
     if processed.face_bbox:
         x, y, bw, bh = processed.face_bbox
@@ -86,24 +86,24 @@ def _draw_top_hud(
     state_color: tuple[int, int, int],
     width: int,
 ) -> None:
-    bar_h = 34
+    bar_h = 42
     cv2.rectangle(frame, (0, 0), (width, bar_h), HUD_BG, -1)
     cv2.line(frame, (0, bar_h), (width, bar_h), HUD_BORDER, 1, cv2.LINE_AA)
     state = _state_label(processed.state)
-    _text(frame, state, 10, 23, 0.58, state_color, 2)
+    _text(frame, state, 8, 18, 0.46, state_color, 2)
 
     risk = _clamp(processed.risk_score)
-    risk_x = min(width - 160, max(96, width // 3))
-    _text(frame, "RISK", risk_x, 22, 0.38, MUTED, 1)
-    _bar(frame, risk_x + 42, 13, 78, 8, risk, _risk_color(risk))
-    _text(frame, f"{risk:.2f}", risk_x + 126, 22, 0.38, TEXT, 1)
+    risk_x = 8
+    _text(frame, "rui ro", risk_x, 34, 0.30, MUTED, 1)
+    _bar(frame, risk_x + 44, 27, max(50, width - 166), 7, risk, _risk_color(risk))
+    _text(frame, f"{risk:.2f}", width - 110, 34, 0.30, TEXT, 1)
 
     fps = processed.packet.telemetry.get("display_fps")
     fps_text = f"FPS {fps:.1f}" if fps is not None else "FPS --"
-    latency = f"{processed.latency_ms:.0f}ms"
+    latency = f"{processed.latency_ms:.0f} ms"
     right = f"{fps_text}  {latency}"
-    size = cv2.getTextSize(right, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)[0]
-    _text(frame, right, max(8, width - size[0] - 10), 22, 0.38, MUTED, 1)
+    size = cv2.getTextSize(right, cv2.FONT_HERSHEY_SIMPLEX, 0.30, 1)[0]
+    _text(frame, right, max(8, width - size[0] - 8), 18, 0.30, MUTED, 1)
 
 
 def _draw_signal_strip(frame: Array, processed: ProcessedFrame, width: int, height: int) -> None:
@@ -113,18 +113,18 @@ def _draw_signal_strip(frame: Array, processed: ProcessedFrame, width: int, heig
     cv2.line(frame, (0, y0), (width, y0), HUD_BORDER, 1, cv2.LINE_AA)
 
     labels = [
-        ("eyes", "eyes_closed"),
-        ("drowsy", "drowsy"),
-        ("yawn", "yawning"),
-        ("away", "distracted"),
-        ("phone", "phone_use"),
+        ("mat", "eyes_closed"),
+        ("ngu", "drowsy"),
+        ("ngap", "yawning"),
+        ("lech", "distracted"),
+        ("dt", "phone_use"),
     ]
     col_w = max(58, width // len(labels))
     for idx, (label, signal) in enumerate(labels):
         x = idx * col_w + 8
         value = _clamp(processed.signals.get(signal, 0.0))
         color = _signal_color(signal, value)
-        _text(frame, label, x, y0 + 17, 0.34, MUTED, 1)
+        _text(frame, label, x, y0 + 17, 0.32, MUTED, 1)
         _bar(frame, x, y0 + 24, max(32, col_w - 20), 7, value, color)
         _text(frame, f"{int(value * 100):02d}", x + max(34, col_w - 28), y0 + 17, 0.3, TEXT, 1)
 
@@ -132,7 +132,7 @@ def _draw_signal_strip(frame: Array, processed: ProcessedFrame, width: int, heig
     humidity = processed.signals.get("dht11_humidity_pct", 0.0)
     driving = processed.signals.get("driving_hours_today", 0.0)
     occupied = processed.signals.get("cabin_occupancy", 0.0) >= 0.5
-    cabin = f"cabin {temp:.1f}C {humidity:.0f}%   drive {driving:.1f}h   occupant {'YES' if occupied else 'NO'}"
+    cabin = f"khoang {temp:.1f}C {humidity:.0f}%   lai {driving:.1f}h   khach {'CO' if occupied else 'KHONG'}"
     _text(frame, cabin, 10, height - 8, 0.32, MUTED, 1)
 
 
@@ -174,7 +174,7 @@ def _draw_face_layer(
 def _draw_objects(frame: Array, processed: ProcessedFrame) -> None:
     for obj in processed.objects[:2]:
         x, y, bw, bh = obj["bbox"]
-        label = str(obj["label"]).upper()
+        label = _object_label(str(obj["label"]))
         cv2.rectangle(frame, (x, y), (x + bw, y + bh), ROSE, 2, cv2.LINE_AA)
         _tag(frame, label, x, max(14, y - 6), ROSE)
 
@@ -188,7 +188,7 @@ def _draw_alert_banner(frame: Array, processed: ProcessedFrame, width: int, heig
     y = max(34, height - 54 - banner_h)
     color = ROSE if event.severity.value == "critical" else AMBER
     cv2.rectangle(frame, (8, y), (width - 8, y + banner_h), color, -1)
-    _text(frame, event.message[:64], 16, y + 17, 0.42, (18, 22, 26), 1)
+    _text(frame, _event_message(event.message)[:64], 16, y + 17, 0.36, (18, 22, 26), 1)
 
 
 def _tag(frame: Array, text: str, x: int, y: int, color: tuple[int, int, int]) -> None:
@@ -224,7 +224,37 @@ def _text(
 
 
 def _state_label(state: DriverState) -> str:
-    return state.value.replace("_", " ").upper()
+    labels = {
+        DriverState.ATTENTIVE: "TAP TRUNG",
+        DriverState.EYES_CLOSED: "NHAM MAT",
+        DriverState.DROWSY: "BUON NGU",
+        DriverState.YAWNING: "NGAP",
+        DriverState.DISTRACTED: "MAT TAP TRUNG",
+        DriverState.PHONE_USE: "DUNG DIEN THOAI",
+    }
+    return labels.get(state, state.value.replace("_", " ").upper())
+
+
+def _object_label(label: str) -> str:
+    labels = {
+        "phone": "DIEN THOAI",
+        "cell phone": "DIEN THOAI",
+        "mobile": "DIEN THOAI",
+    }
+    return labels.get(label.lower(), label.upper())
+
+
+def _event_message(message: str) -> str:
+    replacements = {
+        "Phone use detected while driving": "Phat hien dung dien thoai khi lai xe",
+        "Distracted: driver attention not trackable": "Mat tap trung: khong theo doi duoc tai xe",
+        "Eyes closed beyond configured threshold": "Mat nham qua nguong",
+        "Sustained eye closure indicates drowsiness": "Dau hieu buon ngu",
+        "Yawn detected from mouth landmarks": "Phat hien ngap",
+        "Head pose indicates driver is looking away": "Tai xe nhin lech huong",
+        "Cabin climate outside comfort band (DHT11)": "Khoang lai ngoai nguong thoai mai",
+    }
+    return replacements.get(message, message)
 
 
 def _risk_color(value: float) -> tuple[int, int, int]:
