@@ -3,12 +3,19 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, quantiles
+from threading import Lock, Thread
+from time import perf_counter, sleep
 
 import cv2
 
 from driver_safety.config import DriverSafetyConfig
+from driver_safety.core.models import FramePacket, ProcessedFrame
 from driver_safety.core.scoring import RiskScorer
-from driver_safety.io.overlay import AnnotatedVideoWriter, draw_minimal_overlay, draw_overlay
+from driver_safety.io.overlay import (
+    AnnotatedVideoWriter,
+    draw_minimal_overlay_on_frame,
+    draw_overlay,
+)
 from driver_safety.io.sources import VideoFrameSource, WebcamFrameSource
 from driver_safety.reporting.exports import export_run_artifacts
 from driver_safety.reporting.recorder import SessionRecorder
@@ -91,53 +98,93 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     pipeline = DriverSafetyPipeline(config)
     dht11_reader = DHT11Reader(config.dht11)
     audio_player = AudioAlertPlayer()
-    min_process_interval = (
-        config.vision.process_every_n_frames / max(1.0, float(config.camera.fps or source.fps or 30.0))
-    )
-    last_processed_at = -min_process_interval
-    try:
-        while True:
-<<<<<<< HEAD
-            packet = next(source)
-            if packet.frame_index % config.vision.process_every_n_frames != 0:
-=======
-            packet = source.latest()
-            if packet.timestamp - last_processed_at < min_process_interval:
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
->>>>>>> 6002e911f6036a4aabb6727467e1230de6a5a07a
+    source_fps = float(config.camera.fps or source.fps or 30.0)
+    target_display_fps = float(config.runtime.output_fps or source_fps or 30.0)
+    display_interval = 1.0 / max(1.0, target_display_fps)
+    analysis_interval = config.vision.process_every_n_frames / max(1.0, source_fps)
+
+    lock = Lock()
+    pending_packet: FramePacket | None = None
+    latest_processed: ProcessedFrame | None = None
+    stop_worker = False
+
+    def submit_for_analysis(packet: FramePacket) -> None:
+        nonlocal pending_packet
+        with lock:
+            pending_packet = packet
+
+    def read_latest_processed() -> ProcessedFrame | None:
+        with lock:
+            return latest_processed
+
+    def analysis_worker() -> None:
+        nonlocal latest_processed, pending_packet
+        while not stop_worker:
+            with lock:
+                packet = pending_packet
+                pending_packet = None
+            if packet is None:
+                sleep(0.001)
                 continue
-            last_processed_at = packet.timestamp
             packet.telemetry.update(dht11_reader.read(packet.timestamp))
             processed = pipeline.process_frame(packet)
             audio_player.handle_events(processed.events, now=packet.timestamp)
             if config.runtime.debug_frames:
-                try:
-                    events_signals = [e.signal for e in processed.events]
-                    objects = [
-                        (o["label"], round(float(o["confidence"]), 3), tuple(o["bbox"]))
-                        for o in processed.objects
-                    ]
-                    phone_val = processed.signals.get("phone_use", 0.0)
-                    distracted_val = processed.signals.get("distracted", 0.0)
-                    print(
-                        f"[frame {packet.frame_index}] ts={packet.timestamp:.3f} "
-                        f"pos={processed.driver_position} risk={processed.risk_score:.2f} "
-                        f"events={events_signals} objects={objects} phone={phone_val:.3f} "
-                        f"distracted={distracted_val:.3f}",
-                        flush=True,
-                    )
-                except Exception:
-                    pass
+                _print_debug_frame(processed)
+            with lock:
+                latest_processed = processed
 
-            frame = draw_minimal_overlay(processed) if config.runtime.minimal_overlay else draw_overlay(processed)
+    worker = Thread(target=analysis_worker, daemon=True)
+    worker.start()
+    last_submitted_at = -analysis_interval
+    try:
+        while True:
+            frame_started = perf_counter()
+            packet = source.latest()
+            if packet.timestamp - last_submitted_at >= analysis_interval:
+                submit_for_analysis(packet)
+                last_submitted_at = packet.timestamp
+
+            processed = read_latest_processed()
+            if config.runtime.minimal_overlay:
+                frame = packet.frame.copy()
+                if processed is not None:
+                    frame = draw_minimal_overlay_on_frame(frame, processed)
+            elif processed is not None:
+                frame = draw_overlay(processed)
+            else:
+                frame = packet.frame
+
             cv2.imshow("AI Driver Safety", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
+            sleep(max(0.0, display_interval - (perf_counter() - frame_started)))
     finally:
+        stop_worker = True
+        worker.join(timeout=0.5)
         audio_player.close()
         source.close()
         cv2.destroyAllWindows()
+
+
+def _print_debug_frame(processed: ProcessedFrame) -> None:
+    try:
+        events_signals = [event.signal for event in processed.events]
+        objects = [
+            (obj["label"], round(float(obj["confidence"]), 3), tuple(obj["bbox"]))
+            for obj in processed.objects
+        ]
+        phone_val = processed.signals.get("phone_use", 0.0)
+        distracted_val = processed.signals.get("distracted", 0.0)
+        print(
+            f"[frame {processed.packet.frame_index}] ts={processed.packet.timestamp:.3f} "
+            f"pos={processed.driver_position} risk={processed.risk_score:.2f} "
+            f"events={events_signals} objects={objects} phone={phone_val:.3f} "
+            f"distracted={distracted_val:.3f}",
+            flush=True,
+        )
+    except Exception:
+        pass
 
 
 def _session_id(video_path: str | Path) -> str:

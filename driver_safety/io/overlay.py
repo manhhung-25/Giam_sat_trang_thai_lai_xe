@@ -73,6 +73,10 @@ def draw_overlay(processed: ProcessedFrame) -> Array:
 
 def draw_minimal_overlay(processed: ProcessedFrame) -> Array:
     frame = processed.packet.frame
+    return draw_minimal_overlay_on_frame(frame, processed)
+
+
+def draw_minimal_overlay_on_frame(frame: Array, processed: ProcessedFrame) -> Array:
     state_color = STATE_COLORS.get(processed.state, (255, 255, 255))
     label = f"{processed.state.value} {processed.risk_score:.2f} {processed.latency_ms:.0f}ms"
     cv2.putText(

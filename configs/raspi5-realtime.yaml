@@ -24,7 +24,7 @@ object_detector:
   phone_labels:
     - phone
 runtime:
-  output_fps: 15
+  output_fps: 30
   max_frames: null
   display: true
   write_video: false
