@@ -40,6 +40,8 @@ class ObjectDetectorConfig:
     confidence_threshold: float = 0.25
     iou_threshold: float = 0.45
     process_interval_seconds: float = 0.0
+    skin_hand_scan_width: int = 320
+    skin_hand_min_ratio: float = 0.18
     phone_labels: list[str] = field(default_factory=lambda: ["cell phone", "phone", "mobile"])
 
 
@@ -182,6 +184,10 @@ def _validate_config(config: DriverSafetyConfig) -> None:
         raise ValueError("object_detector.iou_threshold must be between 0 and 1")
     if config.object_detector.process_interval_seconds < 0:
         raise ValueError("object_detector.process_interval_seconds must be >= 0")
+    if config.object_detector.skin_hand_scan_width < 64:
+        raise ValueError("object_detector.skin_hand_scan_width must be >= 64")
+    if not 0 < config.object_detector.skin_hand_min_ratio < 1:
+        raise ValueError("object_detector.skin_hand_min_ratio must be between 0 and 1")
     if config.fatigue_policy.rest_recommendation_seconds <= 0:
         raise ValueError("fatigue_policy.rest_recommendation_seconds must be > 0")
     if config.fatigue_policy.mandatory_rest_seconds <= 0:

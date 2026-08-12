@@ -105,6 +105,23 @@ def test_object_detector_runs_on_configured_interval() -> None:
     assert object_detector.calls == 2
 
 
+def test_skin_hand_provider_emits_phone_use_near_face() -> None:
+    config = load_config(Path("configs/raspi5-realtime.yaml"))
+    config.thresholds.phone_use_frames = 1
+    config.thresholds.phone_confidence = 0.5
+    config.object_detector.process_interval_seconds = 0.0
+    pipeline = DriverSafetyPipeline(
+        config,
+        face_detector=_StaticFaceDetector(),
+    )
+    frame = np.zeros((180, 320, 3), dtype=np.uint8)
+    frame[40:125, 55:105] = (80, 140, 180)
+
+    result = pipeline.process_frame(FramePacket(frame=frame, timestamp=0.0, frame_index=0))
+
+    assert [event for event in result.events if event.signal == "phone_use"]
+
+
 def test_cabin_left_behind_alert_when_driver_absent_with_occupant() -> None:
     config = load_config(Path("configs/default.yaml"))
     config.thresholds.missing_face_frames = 1
@@ -155,6 +172,37 @@ class _NoFaceDetector:
 
     def detect(self, packet: FramePacket) -> list[FaceObservation]:
         return []
+
+
+class _StaticFaceDetector:
+    provider = "test"
+
+    def detect(self, packet: FramePacket) -> list[FaceObservation]:
+        return [
+            FaceObservation(
+                bbox=(120, 45, 80, 90),
+                landmarks={
+                    "left_eye": [(135, 75), (140, 70), (150, 70), (155, 75), (150, 80), (140, 80)],
+                    "right_eye": [
+                        (165, 75),
+                        (170, 70),
+                        (180, 70),
+                        (185, 75),
+                        (180, 80),
+                        (170, 80),
+                    ],
+                    "mouth": [
+                        (145, 105),
+                        (150, 100),
+                        (170, 100),
+                        (175, 105),
+                        (170, 110),
+                        (150, 110),
+                    ],
+                    "pose": [(160, 90), (140, 75), (180, 75), (145, 105), (175, 105)],
+                },
+            )
+        ]
 
 
 class _PhoneObjectDetector:

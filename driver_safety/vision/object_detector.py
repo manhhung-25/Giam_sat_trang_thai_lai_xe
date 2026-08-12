@@ -97,6 +97,8 @@ def create_object_detector(config: DriverSafetyConfig) -> ObjectDetector:
     obj_config = config.object_detector
     if not obj_config.enabled or obj_config.provider == "none":
         return NoopObjectDetector()
+    if obj_config.provider == "skin_hand":
+        return NoopObjectDetector()
     if obj_config.provider == "onnx":
         return OnnxObjectDetector(
             Path(obj_config.model_path),

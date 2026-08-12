@@ -6,6 +6,9 @@ thresholds:
   drowsy_frames: 24
   yawn_frames: 5
   distracted_frames: 8
+  phone_confidence: 0.55
+  phone_use_frames: 8
+  phone_hold_frames: 8
 vision:
   provider: auto
   face_landmarker_model: models/face_landmarker.task
@@ -13,7 +16,13 @@ vision:
   process_every_n_frames: 2
   draw_landmarks: false
 object_detector:
-  enabled: false
+  enabled: true
+  provider: skin_hand
+  process_interval_seconds: 0.25
+  skin_hand_scan_width: 320
+  skin_hand_min_ratio: 0.18
+  phone_labels:
+    - phone
 runtime:
   output_fps: 15
   max_frames: null

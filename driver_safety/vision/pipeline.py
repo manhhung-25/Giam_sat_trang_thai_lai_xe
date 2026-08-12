@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from time import perf_counter
 
+import cv2
+
 from driver_safety.config import DriverSafetyConfig
 from driver_safety.core.alerts import AlertPolicy
 from driver_safety.core.models import (
@@ -105,7 +107,7 @@ class DriverSafetyPipeline:
             raw_signals.update(self._face_signals(packet, observation.bbox, observation.landmarks))
             events.extend(self._events_from_signals(packet, raw_signals, face_bbox, landmarks))
 
-        object_observations = self._object_observations(packet)
+        object_observations = self._object_observations(packet, face_bbox)
         phone_labels = {label.lower() for label in self.config.object_detector.phone_labels}
         occupant_labels = {label.lower() for label in self.config.cabin_safety.occupant_labels}
         best_phone = None
@@ -224,7 +226,11 @@ class DriverSafetyPipeline:
             driver_position=driver_position,
         )
 
-    def _object_observations(self, packet: FramePacket) -> list[ObjectObservation]:
+    def _object_observations(
+        self,
+        packet: FramePacket,
+        face_bbox: tuple[int, int, int, int] | None,
+    ) -> list[ObjectObservation]:
         interval = self.config.object_detector.process_interval_seconds
         should_detect = (
             interval <= 0
@@ -232,9 +238,71 @@ class DriverSafetyPipeline:
             or packet.timestamp - self._last_object_detection_at >= interval
         )
         if should_detect:
-            self._cached_object_observations = self.object_detector.detect(packet)
+            if self.config.object_detector.provider == "skin_hand":
+                self._cached_object_observations = self._skin_hand_phone_observations(
+                    packet,
+                    face_bbox,
+                )
+            else:
+                self._cached_object_observations = self.object_detector.detect(packet)
             self._last_object_detection_at = packet.timestamp
         return self._cached_object_observations
+
+    def _skin_hand_phone_observations(
+        self,
+        packet: FramePacket,
+        face_bbox: tuple[int, int, int, int] | None,
+    ) -> list[ObjectObservation]:
+        if not self.config.object_detector.enabled or face_bbox is None:
+            return []
+
+        frame = packet.frame
+        frame_h, frame_w = frame.shape[:2]
+        fx, fy, fw, fh = face_bbox
+        if fw <= 0 or fh <= 0:
+            return []
+
+        pad_x = int(fw * 0.55)
+        pad_y = int(fh * 0.18)
+        zone_w = max(12, int(fw * 0.65))
+        y1 = max(0, fy - pad_y)
+        y2 = min(frame_h, fy + int(fh * 0.95))
+        zones = [
+            (max(0, fx - pad_x), y1, max(0, fx - pad_x) + zone_w, y2),
+            (min(frame_w, fx + fw + pad_x - zone_w), y1, min(frame_w, fx + fw + pad_x), y2),
+        ]
+
+        scale = min(1.0, self.config.object_detector.skin_hand_scan_width / max(1, frame_w))
+        small = cv2.resize(frame, (int(frame_w * scale), int(frame_h * scale)))
+        ycrcb = cv2.cvtColor(small, cv2.COLOR_BGR2YCrCb)
+        mask = cv2.inRange(ycrcb, (0, 133, 77), (255, 173, 127))
+
+        best: tuple[float, tuple[int, int, int, int]] | None = None
+        for x1, zy1, x2, zy2 in zones:
+            if x2 <= x1 or zy2 <= zy1:
+                continue
+            sx1, sy1, sx2, sy2 = [int(value * scale) for value in (x1, zy1, x2, zy2)]
+            roi = mask[sy1:sy2, sx1:sx2]
+            if roi.size == 0:
+                continue
+            ratio = float(cv2.countNonZero(roi)) / float(roi.size)
+            if best is None or ratio > best[0]:
+                best = (ratio, (x1, zy1, x2 - x1, zy2 - zy1))
+
+        if best is None:
+            return []
+        ratio, bbox = best
+        if ratio < self.config.object_detector.skin_hand_min_ratio:
+            return []
+        confidence = min(0.99, ratio / max(self.config.object_detector.skin_hand_min_ratio, 1e-6))
+        return [
+            ObjectObservation(
+                label="phone",
+                confidence=confidence,
+                bbox=bbox,
+                provider="skin_hand",
+            )
+        ]
 
     def _update_driving_clock(self, timestamp: float) -> None:
         if self._last_timestamp is None:
