@@ -16,7 +16,7 @@ vision:
   process_every_n_frames: 3
   draw_landmarks: true
 object_detector:
-  enabled: true
+  enabled: false
   provider: skin_hand
   process_interval_seconds: 0.25
   skin_hand_scan_width: 320

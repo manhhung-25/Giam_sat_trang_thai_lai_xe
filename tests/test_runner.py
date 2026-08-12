@@ -109,13 +109,14 @@ def test_skin_hand_provider_emits_phone_use_near_face() -> None:
     config = load_config(Path("configs/raspi5-realtime.yaml"))
     config.thresholds.phone_use_frames = 1
     config.thresholds.phone_confidence = 0.5
+    config.object_detector.enabled = True
     config.object_detector.process_interval_seconds = 0.0
     pipeline = DriverSafetyPipeline(
         config,
         face_detector=_StaticFaceDetector(),
     )
     frame = np.zeros((180, 320, 3), dtype=np.uint8)
-    frame[40:125, 55:105] = (80, 140, 180)
+    frame[60:95, 95:111] = (80, 140, 180)
 
     result = pipeline.process_frame(FramePacket(frame=frame, timestamp=0.0, frame_index=0))
 

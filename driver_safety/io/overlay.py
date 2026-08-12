@@ -116,24 +116,19 @@ def _draw_signal_strip(frame: Array, processed: ProcessedFrame, width: int, heig
         ("mat", "eyes_closed"),
         ("ngu", "drowsy"),
         ("ngap", "yawning"),
-        ("lech", "distracted"),
-        ("dt", "phone_use"),
+        ("tap trung", "distracted"),
+        ("dien thoai", "phone_use"),
     ]
-    col_w = max(58, width // len(labels))
+    col_w = max(1, width // len(labels))
     for idx, (label, signal) in enumerate(labels):
-        x = idx * col_w + 8
+        x = idx * col_w + 6
         value = _clamp(processed.signals.get(signal, 0.0))
         color = _signal_color(signal, value)
-        _text(frame, label, x, y0 + 17, 0.32, MUTED, 1)
-        _bar(frame, x, y0 + 24, max(32, col_w - 20), 7, value, color)
-        _text(frame, f"{int(value * 100):02d}", x + max(34, col_w - 28), y0 + 17, 0.3, TEXT, 1)
-
-    temp = processed.signals.get("dht11_temperature_c", 0.0)
-    humidity = processed.signals.get("dht11_humidity_pct", 0.0)
-    driving = processed.signals.get("driving_hours_today", 0.0)
-    occupied = processed.signals.get("cabin_occupancy", 0.0) >= 0.5
-    cabin = f"khoang {temp:.1f}C {humidity:.0f}%   lai {driving:.1f}h   khach {'CO' if occupied else 'KHONG'}"
-    _text(frame, cabin, 10, height - 8, 0.32, MUTED, 1)
+        label_scale = 0.27 if len(label) > 6 else 0.32
+        _text(frame, label, x, y0 + 17, label_scale, MUTED, 1)
+        _bar(frame, x, y0 + 24, max(22, col_w - 12), 7, value, color)
+        if col_w >= 58:
+            _text(frame, f"{int(value * 100):02d}", x + col_w - 24, y0 + 17, 0.28, TEXT, 1)
 
 
 def _draw_face_layer(

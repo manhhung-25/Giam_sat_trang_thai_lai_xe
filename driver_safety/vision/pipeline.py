@@ -262,14 +262,12 @@ class DriverSafetyPipeline:
         if fw <= 0 or fh <= 0:
             return []
 
-        pad_x = int(fw * 0.55)
-        pad_y = int(fh * 0.18)
-        zone_w = max(12, int(fw * 0.65))
-        y1 = max(0, fy - pad_y)
-        y2 = min(frame_h, fy + int(fh * 0.95))
+        zone_w = max(12, int(fw * 0.42))
+        y1 = max(0, fy + int(fh * 0.08))
+        y2 = min(frame_h, fy + int(fh * 0.62))
         zones = [
-            (max(0, fx - pad_x), y1, max(0, fx - pad_x) + zone_w, y2),
-            (min(frame_w, fx + fw + pad_x - zone_w), y1, min(frame_w, fx + fw + pad_x), y2),
+            (max(0, fx - zone_w), y1, max(0, fx - zone_w) + zone_w, y2),
+            (min(frame_w, fx + fw), y1, min(frame_w, fx + fw + zone_w), y2),
         ]
 
         scale = min(1.0, self.config.object_detector.skin_hand_scan_width / max(1, frame_w))
@@ -285,7 +283,16 @@ class DriverSafetyPipeline:
             roi = mask[sy1:sy2, sx1:sx2]
             if roi.size == 0:
                 continue
-            ratio = float(cv2.countNonZero(roi)) / float(roi.size)
+            contours, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                continue
+            contour = max(contours, key=cv2.contourArea)
+            area = float(cv2.contourArea(contour))
+            ratio = area / float(roi.size)
+            rx, ry, rw, rh = cv2.boundingRect(contour)
+            aspect = rw / max(1.0, float(rh))
+            if ratio > 0.55 or not 0.25 <= aspect <= 1.8:
+                continue
             if best is None or ratio > best[0]:
                 best = (ratio, (x1, zy1, x2 - x1, zy2 - zy1))
 
