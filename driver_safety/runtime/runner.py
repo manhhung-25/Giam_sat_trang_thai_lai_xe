@@ -92,7 +92,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     audio_player = AudioAlertPlayer()
     try:
         while True:
-            packet = source.latest()
+            packet = next(source)
             if packet.frame_index % config.vision.process_every_n_frames != 0:
                 continue
             packet.telemetry.update(dht11_reader.read(packet.timestamp))
