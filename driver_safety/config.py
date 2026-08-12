@@ -53,6 +53,7 @@ class RuntimeConfig:
     write_video: bool = True
     debug_frames: bool = False
     minimal_overlay: bool = False
+    display_scale: float = 1.0
     alert_cooldown_seconds: float = 2.0
 
 
@@ -166,6 +167,8 @@ def _validate_config(config: DriverSafetyConfig) -> None:
             raise ValueError(f"thresholds.{field_name} must be within a sensible range")
     if config.runtime.max_frames is not None and config.runtime.max_frames < 1:
         raise ValueError("runtime.max_frames must be >= 1 when set")
+    if config.runtime.display_scale <= 0:
+        raise ValueError("runtime.display_scale must be > 0")
     if config.camera.width is not None and config.camera.width < 1:
         raise ValueError("camera.width must be >= 1 when set")
     if config.camera.height is not None and config.camera.height < 1:

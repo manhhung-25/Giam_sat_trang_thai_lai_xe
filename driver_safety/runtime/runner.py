@@ -103,6 +103,16 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     target_display_fps = float(config.runtime.output_fps or source_fps or 30.0)
     display_interval = 1.0 / max(1.0, target_display_fps)
     analysis_interval = config.vision.process_every_n_frames / max(1.0, source_fps)
+    display_scale = float(config.runtime.display_scale)
+    window_name = "AI Driver Safety"
+    if display_scale != 1.0:
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        if config.camera.width and config.camera.height:
+            cv2.resizeWindow(
+                window_name,
+                int(config.camera.width * display_scale),
+                int(config.camera.height * display_scale),
+            )
 
     lock = Lock()
     pending_packet: FramePacket | None = None
@@ -156,7 +166,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
             else:
                 frame = packet.frame
 
-            cv2.imshow("AI Driver Safety", frame)
+            cv2.imshow(window_name, frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
             sleep(max(0.0, display_interval - (perf_counter() - frame_started)))

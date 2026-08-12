@@ -30,13 +30,14 @@ runtime:
   write_video: false
   debug_frames: false
   minimal_overlay: false
+  display_scale: 2.0
   alert_cooldown_seconds: 2.0
 camera:
   width: 320
   height: 240
   fps: 30
   buffer_size: 1
-  fourcc: MJPG
+  fourcc: null
   threaded: true
 dht11:
   enabled: false

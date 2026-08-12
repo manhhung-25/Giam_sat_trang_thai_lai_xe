@@ -101,11 +101,11 @@ def main() -> None:
         displayed_count += 1
         sleep(max(0.0, display_interval - (perf_counter() - frame_started)))
 
+    display_duration = perf_counter() - started
     stop = True
     thread.join(timeout=0.5)
-    actual_duration = perf_counter() - started
-    measured_display_fps = displayed_count / actual_duration
-    measured_analysis_fps = processed_count / actual_duration
+    measured_display_fps = displayed_count / display_duration
+    measured_analysis_fps = processed_count / display_duration
 
     print(f"config={args.config}")
     print(f"target_display_fps={display_fps:.2f}")
