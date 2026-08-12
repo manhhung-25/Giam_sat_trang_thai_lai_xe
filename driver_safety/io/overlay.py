@@ -99,9 +99,8 @@ def draw_minimal_overlay_on_frame(frame: Array, processed: ProcessedFrame) -> Ar
 
 
 def _draw_panel(frame: Array, x: int, y: int, w: int, h: int, *, alpha: float) -> None:
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (x, y), (x + w, y + h), (18, 22, 23), -1)
-    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+    del alpha
+    cv2.rectangle(frame, (x, y), (x + w, y + h), (18, 22, 23), -1)
     cv2.rectangle(frame, (x, y), (x + w, y + h), (82, 92, 94), 1, cv2.LINE_AA)
 
 
@@ -154,12 +153,19 @@ def _draw_face_mask(frame: Array, processed: ProcessedFrame, state_color: tuple[
     if not processed.face_bbox:
         return
     x, y, bw, bh = processed.face_bbox
-    overlay = frame.copy()
     if len(processed.landmarks) >= 8:
         pts = np.array([(int(px), int(py)) for px, py in processed.landmarks], dtype=np.int32)
         hull = cv2.convexHull(pts)
-        cv2.fillConvexPoly(overlay, hull, state_color)
-        cv2.addWeighted(overlay, 0.12, frame, 0.88, 0, frame)
+        hx, hy, hw, hh = cv2.boundingRect(hull)
+        hx = max(0, hx)
+        hy = max(0, hy)
+        hw = min(frame.shape[1] - hx, hw)
+        hh = min(frame.shape[0] - hy, hh)
+        if hw > 0 and hh > 0:
+            roi = frame[hy : hy + hh, hx : hx + hw]
+            overlay = roi.copy()
+            cv2.fillConvexPoly(overlay, hull - (hx, hy), state_color)
+            cv2.addWeighted(overlay, 0.12, roi, 0.88, 0, roi)
         cv2.polylines(frame, [hull], True, state_color, 1, cv2.LINE_AA)
         step = max(1, len(processed.landmarks) // 54)
         for px, py in processed.landmarks[::step]:

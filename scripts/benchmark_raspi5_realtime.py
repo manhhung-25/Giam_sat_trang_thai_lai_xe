@@ -6,9 +6,15 @@ from pathlib import Path
 from threading import Lock, Thread
 from time import perf_counter, sleep
 
+import numpy as np
+
+from dataclasses import replace
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from driver_safety.config import load_config
+from driver_safety.core.models import DriverState, FramePacket, ProcessedFrame
+from driver_safety.io.overlay import draw_minimal_overlay_on_frame, draw_overlay
 
 
 def main() -> None:
@@ -25,6 +31,35 @@ def main() -> None:
     display_interval = 1.0 / display_fps
     analysis_interval = config.vision.process_every_n_frames / source_fps
     analysis_seconds = args.analysis_ms / 1000.0
+    width = int(config.camera.width or 320)
+    height = int(config.camera.height or 240)
+    base_frame = np.zeros((height, width, 3), dtype=np.uint8)
+    face_bbox = (width // 3, height // 4, width // 4, height // 3)
+    landmarks = [
+        (face_bbox[0] + (idx % 18) * max(1, face_bbox[2] // 18), face_bbox[1] + (idx // 18) * 4)
+        for idx in range(108)
+    ]
+    processed = ProcessedFrame(
+        packet=FramePacket(frame=base_frame, timestamp=0.0, frame_index=0),
+        state=DriverState.ATTENTIVE,
+        risk_score=0.12,
+        signals={
+            "eyes_closed": 0.0,
+            "drowsy": 0.0,
+            "yawning": 0.0,
+            "distracted": 0.0,
+            "phone_use": 0.0,
+            "dht11_temperature_c": 0.0,
+            "dht11_humidity_pct": 0.0,
+            "driver_absent_seconds": 0.0,
+            "cabin_occupancy": 0.0,
+            "driving_hours_today": 0.0,
+        },
+        events=[],
+        latency_ms=args.analysis_ms,
+        face_bbox=face_bbox,
+        landmarks=landmarks,
+    )
 
     lock = Lock()
     pending_timestamp: float | None = None
@@ -58,6 +93,11 @@ def main() -> None:
                 pending_timestamp = elapsed
             submitted_count += 1
             last_submitted_at = elapsed
+        frame = base_frame.copy()
+        if config.runtime.minimal_overlay:
+            draw_minimal_overlay_on_frame(frame, processed)
+        else:
+            draw_overlay(replace(processed, packet=FramePacket(frame=frame, timestamp=elapsed, frame_index=displayed_count)))
         displayed_count += 1
         sleep(max(0.0, display_interval - (perf_counter() - frame_started)))
 

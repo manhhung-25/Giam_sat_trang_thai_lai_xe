@@ -10,11 +10,11 @@ thresholds:
   phone_use_frames: 8
   phone_hold_frames: 8
 vision:
-  provider: haar
+  provider: auto
   face_landmarker_model: models/face_landmarker.task
   fallback_to_haar: true
   process_every_n_frames: 3
-  draw_landmarks: false
+  draw_landmarks: true
 object_detector:
   enabled: true
   provider: skin_hand
@@ -29,7 +29,7 @@ runtime:
   display: true
   write_video: false
   debug_frames: false
-  minimal_overlay: true
+  minimal_overlay: false
   alert_cooldown_seconds: 2.0
 camera:
   width: 320

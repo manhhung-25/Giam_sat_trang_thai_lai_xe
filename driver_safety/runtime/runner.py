@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, quantiles
@@ -151,7 +152,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
                 if processed is not None:
                     frame = draw_minimal_overlay_on_frame(frame, processed)
             elif processed is not None:
-                frame = draw_overlay(processed)
+                frame = draw_overlay(replace(processed, packet=packet))
             else:
                 frame = packet.frame
 
