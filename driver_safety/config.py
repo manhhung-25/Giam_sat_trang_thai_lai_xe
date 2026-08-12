@@ -52,6 +52,7 @@ class RuntimeConfig:
     display: bool = False
     write_video: bool = True
     debug_frames: bool = False
+    minimal_overlay: bool = False
     alert_cooldown_seconds: float = 2.0
 
 

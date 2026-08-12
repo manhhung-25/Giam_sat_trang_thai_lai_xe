@@ -10,10 +10,10 @@ thresholds:
   phone_use_frames: 8
   phone_hold_frames: 8
 vision:
-  provider: auto
+  provider: haar
   face_landmarker_model: models/face_landmarker.task
   fallback_to_haar: true
-  process_every_n_frames: 2
+  process_every_n_frames: 3
   draw_landmarks: false
 object_detector:
   enabled: true
@@ -29,15 +29,16 @@ runtime:
   display: true
   write_video: false
   debug_frames: false
+  minimal_overlay: true
   alert_cooldown_seconds: 2.0
 camera:
-  width: 640
-  height: 480
+  width: 320
+  height: 240
   fps: 30
   buffer_size: 1
   fourcc: MJPG
 dht11:
-  enabled: true
+  enabled: false
   simulate_when_missing: true
 report:
   timeline_stride_frames: 5

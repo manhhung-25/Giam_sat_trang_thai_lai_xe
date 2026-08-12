@@ -39,6 +39,12 @@ class VideoFrameSource:
             fps=self.fps,
         )
 
+    def latest(self, *, max_grabs: int = 4) -> FramePacket:
+        for _ in range(max(0, max_grabs - 1)):
+            if not self.capture.grab():
+                break
+        return next(self)
+
     def close(self) -> None:
         self.capture.release()
 

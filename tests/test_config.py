@@ -20,8 +20,8 @@ def test_invalid_config_rejected(tmp_path: Path) -> None:
 
 def test_camera_config_loaded() -> None:
     config = load_config(Path("configs/raspi5-realtime.yaml"))
-    assert config.camera.width == 640
-    assert config.camera.height == 480
+    assert config.camera.width == 320
+    assert config.camera.height == 240
     assert config.camera.fps == 30
     assert config.camera.buffer_size == 1
 

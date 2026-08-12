@@ -71,6 +71,29 @@ def draw_overlay(processed: ProcessedFrame) -> Array:
     return cast(Array, frame)
 
 
+def draw_minimal_overlay(processed: ProcessedFrame) -> Array:
+    frame = processed.packet.frame
+    state_color = STATE_COLORS.get(processed.state, (255, 255, 255))
+    label = f"{processed.state.value} {processed.risk_score:.2f} {processed.latency_ms:.0f}ms"
+    cv2.putText(
+        frame,
+        label,
+        (10, 24),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
+        state_color,
+        2,
+        cv2.LINE_AA,
+    )
+    if processed.face_bbox:
+        x, y, bw, bh = processed.face_bbox
+        cv2.rectangle(frame, (x, y), (x + bw, y + bh), state_color, 1)
+    for obj in processed.objects[:1]:
+        x, y, bw, bh = obj["bbox"]
+        cv2.rectangle(frame, (x, y), (x + bw, y + bh), (55, 65, 235), 1)
+    return cast(Array, frame)
+
+
 def _draw_panel(frame: Array, x: int, y: int, w: int, h: int, *, alpha: float) -> None:
     overlay = frame.copy()
     cv2.rectangle(overlay, (x, y), (x + w, y + h), (18, 22, 23), -1)

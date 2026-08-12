@@ -8,7 +8,7 @@ import cv2
 
 from driver_safety.config import DriverSafetyConfig
 from driver_safety.core.scoring import RiskScorer
-from driver_safety.io.overlay import AnnotatedVideoWriter, draw_overlay
+from driver_safety.io.overlay import AnnotatedVideoWriter, draw_minimal_overlay, draw_overlay
 from driver_safety.io.sources import VideoFrameSource, WebcamFrameSource
 from driver_safety.reporting.exports import export_run_artifacts
 from driver_safety.reporting.recorder import SessionRecorder
@@ -91,7 +91,8 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     dht11_reader = DHT11Reader(config.dht11)
     audio_player = AudioAlertPlayer()
     try:
-        for packet in source:
+        while True:
+            packet = source.latest()
             if packet.frame_index % config.vision.process_every_n_frames != 0:
                 continue
             packet.telemetry.update(dht11_reader.read(packet.timestamp))
@@ -116,7 +117,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
                 except Exception:
                     pass
 
-            frame = draw_overlay(processed)
+            frame = draw_minimal_overlay(processed) if config.runtime.minimal_overlay else draw_overlay(processed)
             cv2.imshow("AI Driver Safety", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
