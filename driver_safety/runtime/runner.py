@@ -100,7 +100,7 @@ def run_webcam(config: DriverSafetyConfig, index: int = 0) -> None:
     pipeline = DriverSafetyPipeline(config)
     dht11_reader = DHT11Reader(config.dht11)
     audio_player = AudioAlertPlayer()
-    gpio_actuator = GpioAlertActuator(config.actuators)
+    gpio_actuator = GpioAlertActuator(config.actuators, verbose=config.actuators.enabled)
     source_fps = float(config.camera.fps or source.fps or 30.0)
     target_display_fps = float(config.runtime.output_fps or source_fps or 30.0)
     display_interval = 1.0 / max(1.0, target_display_fps)
